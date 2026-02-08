@@ -1,0 +1,217 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import type * as maptilersdk from "@maptiler/sdk";
+import {
+  WindLayer,
+  PrecipitationLayer,
+  TemperatureLayer,
+  PressureLayer,
+  RadarLayer,
+  ColorRamp,
+} from "@maptiler/weather";
+
+export type WeatherLayerType = "wind" | "precipitation" | "pressure" | "radar" | "temperature";
+
+interface WeatherLayerConfig {
+  layer: any | null;
+  value: string;
+  units: string;
+}
+
+export function useWeatherLayers(map: maptilersdk.Map | null) {
+  const weatherLayers = useRef<Record<WeatherLayerType, WeatherLayerConfig>>({
+    precipitation: { layer: null, value: "value", units: " mm" },
+    pressure: { layer: null, value: "value", units: " hPa" },
+    radar: { layer: null, value: "value", units: " dBZ" },
+    temperature: { layer: null, value: "value", units: "°" },
+    wind: { layer: null, value: "speedMetersPerSecond", units: " m/s" },
+  });
+
+  const [activeLayer, setActiveLayer] = useState<WeatherLayerType>("wind");
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [timeText, setTimeText] = useState("");
+  const [sliderValue, setSliderValue] = useState(0);
+  const [sliderMin, setSliderMin] = useState(0);
+  const [sliderMax, setSliderMax] = useState(0);
+  const [pointerValue, setPointerValue] = useState("");
+  const [ready, setReady] = useState(false);
+
+  const currentTimeRef = useRef<number | null>(null);
+  const pointerLngLatRef = useRef<{ lng: number; lat: number } | null>(null);
+  const activeLayerRef = useRef<WeatherLayerType>(activeLayer);
+
+  activeLayerRef.current = activeLayer;
+
+  const updatePointerValue = useCallback((lngLat: { lng: number; lat: number } | null) => {
+    if (!lngLat) return;
+    pointerLngLatRef.current = lngLat;
+    const current = activeLayerRef.current;
+    const config = weatherLayers.current[current];
+    if (config.layer) {
+      const value = config.layer.pickAt(lngLat.lng, lngLat.lat);
+      if (!value) {
+        setPointerValue("");
+        return;
+      }
+      setPointerValue(`${value[config.value].toFixed(1)}${config.units}`);
+    }
+  }, []);
+
+  const refreshTime = useCallback(() => {
+    const current = activeLayerRef.current;
+    const wl = weatherLayers.current[current]?.layer;
+    if (wl) {
+      const d = wl.getAnimationTimeDate();
+      setTimeText(d.toString());
+      setSliderValue(+d);
+    }
+  }, []);
+
+  const createWeatherLayer = useCallback((type: WeatherLayerType) => {
+    let weatherLayer: any = null;
+    switch (type) {
+      case "precipitation":
+        weatherLayer = new PrecipitationLayer({ id: "precipitation" });
+        break;
+      case "pressure":
+        weatherLayer = new PressureLayer({ opacity: 0.8, id: "pressure" });
+        break;
+      case "radar":
+        weatherLayer = new RadarLayer({ opacity: 0.8, id: "radar" });
+        break;
+      case "temperature":
+        weatherLayer = new TemperatureLayer({
+          colorramp: ColorRamp.builtin.TEMPERATURE_3,
+          id: "temperature",
+        });
+        break;
+      case "wind":
+        weatherLayer = new WindLayer({ id: "wind" });
+        break;
+    }
+
+    weatherLayer.on("tick", () => {
+      refreshTime();
+      updatePointerValue(pointerLngLatRef.current);
+    });
+
+    weatherLayer.on("animationTimeSet", () => {
+      refreshTime();
+    });
+
+    weatherLayer.on("sourceReady", () => {
+      const startDate = weatherLayer.getAnimationStartDate();
+      const endDate = weatherLayer.getAnimationEndDate();
+      if (sliderMin > 0 && currentTimeRef.current !== null) {
+        weatherLayer.setAnimationTime(currentTimeRef.current);
+      } else {
+        const currentDate = weatherLayer.getAnimationTimeDate();
+        setSliderMin(+startDate);
+        setSliderMax(+endDate);
+        setSliderValue(+currentDate);
+      }
+    });
+
+    weatherLayers.current[type].layer = weatherLayer;
+    return weatherLayer;
+  }, [refreshTime, updatePointerValue, sliderMin]);
+
+  const changeWeatherLayer = useCallback((type: WeatherLayerType) => {
+    if (!map) return;
+    const prev = activeLayerRef.current;
+
+    if (type !== prev) {
+      if (map.getLayer(prev)) {
+        const prevLayer = weatherLayers.current[prev]?.layer;
+        if (prevLayer) {
+          currentTimeRef.current = prevLayer.getAnimationTime();
+          map.setLayoutProperty(prev, "visibility", "none");
+        }
+      }
+    }
+
+    setActiveLayer(type);
+    activeLayerRef.current = type;
+
+    const weatherLayer = weatherLayers.current[type].layer || createWeatherLayer(type);
+
+    if (map.getLayer(type)) {
+      map.setLayoutProperty(type, "visibility", "visible");
+    } else {
+      map.addLayer(weatherLayer, "Water");
+    }
+  }, [map, createWeatherLayer]);
+
+  const togglePlayPause = useCallback(() => {
+    const wl = weatherLayers.current[activeLayerRef.current]?.layer;
+    if (!wl) return;
+    if (isPlaying) {
+      wl.animateByFactor(0);
+      setIsPlaying(false);
+    } else {
+      wl.animateByFactor(3600);
+      setIsPlaying(true);
+    }
+  }, [isPlaying]);
+
+  const onSliderChange = useCallback((val: number) => {
+    setSliderValue(val);
+    const wl = weatherLayers.current[activeLayerRef.current]?.layer;
+    if (wl) {
+      wl.setAnimationTime(val / 1000);
+    }
+  }, []);
+
+  // Initialize on map load
+  useEffect(() => {
+    if (!map) return;
+
+    const onLoad = () => {
+      try {
+        map.setPaintProperty("Water", "fill-color", "rgba(0, 0, 0, 0.4)");
+      } catch {
+        // Water layer may not exist
+      }
+      changeWeatherLayer("wind");
+      setReady(true);
+    };
+
+    if (map.loaded()) {
+      onLoad();
+    } else {
+      map.on("load", onLoad);
+    }
+
+    const onMouseMove = (e: any) => {
+      updatePointerValue(e.lngLat);
+    };
+
+    const onMouseOut = (e: any) => {
+      if (!e.originalEvent.relatedTarget) {
+        setPointerValue("");
+        pointerLngLatRef.current = null;
+      }
+    };
+
+    map.on("mousemove", onMouseMove);
+    map.on("mouseout", onMouseOut);
+
+    return () => {
+      map.off("mousemove", onMouseMove);
+      map.off("mouseout", onMouseOut);
+    };
+  }, [map, changeWeatherLayer, updatePointerValue]);
+
+  return {
+    activeLayer,
+    changeWeatherLayer,
+    isPlaying,
+    togglePlayPause,
+    timeText,
+    sliderValue,
+    sliderMin,
+    sliderMax,
+    onSliderChange,
+    pointerValue,
+    ready,
+  };
+}
