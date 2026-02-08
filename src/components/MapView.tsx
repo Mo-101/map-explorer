@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import * as maptilersdk from "@maptiler/sdk";
 import "@maptiler/sdk/dist/maptiler-sdk.css";
 
-const MAPTILER_API_KEY = import.meta.env.VITE_MAPTILER_API_KEY;
+const MAPTILER_API_KEY = "19XDon3xsuxOLKdfcaZH";
 
 interface MapViewProps {
   onZoomChange?: (zoom: number) => void;
@@ -36,10 +36,7 @@ const MapView = ({ onZoomChange, onCenterChange }: MapViewProps) => {
     map.current.on("move", () => {
       if (map.current) {
         const center = map.current.getCenter();
-        onCenterChange?.(
-          Math.round(center.lng * 1000) / 1000,
-          Math.round(center.lat * 1000) / 1000
-        );
+        onCenterChange?.(Math.round(center.lng * 1000) / 1000, Math.round(center.lat * 1000) / 1000);
       }
     });
 
@@ -49,9 +46,7 @@ const MapView = ({ onZoomChange, onCenterChange }: MapViewProps) => {
     };
   }, []);
 
-  return (
-    <div ref={mapContainer} className="absolute inset-0 w-full h-full" />
-  );
+  return <div ref={mapContainer} className="absolute inset-0 w-full h-full" />;
 };
 
 export default MapView;
