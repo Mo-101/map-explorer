@@ -7,9 +7,10 @@ const MAPTILER_API_KEY = "19XDon3xsuxOLKdfcaZH";
 interface MapViewProps {
   onZoomChange?: (zoom: number) => void;
   onCenterChange?: (lng: number, lat: number) => void;
+  onMapReady?: (map: maptilersdk.Map) => void;
 }
 
-const MapView = ({ onZoomChange, onCenterChange }: MapViewProps) => {
+const MapView = ({ onZoomChange, onCenterChange, onMapReady }: MapViewProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maptilersdk.Map | null>(null);
 
@@ -39,6 +40,8 @@ const MapView = ({ onZoomChange, onCenterChange }: MapViewProps) => {
         onCenterChange?.(Math.round(center.lng * 1000) / 1000, Math.round(center.lat * 1000) / 1000);
       }
     });
+
+    onMapReady?.(map.current);
 
     return () => {
       map.current?.remove();
