@@ -3,6 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import time
+import os
+
+import httpx
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env.local"))
 
 app = FastAPI(title="AfriGuard Model Service")
 
@@ -19,6 +25,10 @@ class InferenceRequest(BaseModel):
     fields: List[str]
     timestamp: Optional[str] = None
 
+
+class AiAnalyzeRequest(BaseModel):
+    prompt: str
+
 @app.get("/health")
 def health():
     return {"status": "healthy", "engine": "GraphCast-V3-Core"}
@@ -26,7 +36,12 @@ def health():
 
 @app.get("/api/v1/health")
 def health_v1():
-    return {"status": "healthy", "engine": "GraphCast-V3-Core"}
+    return {"status": "healthy", "service": "model-service", "engine": "GraphCast-V3-Core"}
+
+
+@app.get("/api/v1/")
+def health_v1_root():
+    return health_v1()
 
 
 def generate_mock_threats():
@@ -158,6 +173,79 @@ def run_inference(req: InferenceRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/infer")
+def run_inference_v1(req: InferenceRequest):
+    return run_inference(req)
+
+
+@app.post("/api/v1/ai/analyze")
+def ai_analyze(req: AiAnalyzeRequest):
+    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("VITE_AZURE_OPENAI_ENDPOINT")
+    api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("VITE_AZURE_OPENAI_API_KEY")
+    api_version = os.getenv("AZURE_OPENAI_API_VERSION") or os.getenv("VITE_AZURE_OPENAI_API_VERSION")
+    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT") or os.getenv("VITE_AZURE_OPENAI_DEPLOYMENT")
+    model_name = os.getenv("AZURE_OPENAI_MODEL_NAME") or os.getenv("VITE_AZURE_OPENAI_MODEL_NAME")
+
+    if not endpoint or not api_key:
+        raise HTTPException(status_code=503, detail="Azure OpenAI is not configured on the backend")
+
+    if not api_version:
+        api_version = "2024-12-01-preview"
+    if not deployment:
+        deployment = model_name or "gpt-4o-mini"
+
+    clean_base = endpoint.strip()
+    if clean_base.endswith("/"):
+        clean_base = clean_base[:-1]
+
+    url = f"{clean_base}/openai/deployments/{deployment}/chat/completions?api-version={api_version}"
+
+    payload = {
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are an expert weather and public health risk analyst for Africa.",
+            },
+            {"role": "user", "content": req.prompt},
+        ],
+        "max_tokens": 1200,
+        "temperature": 0.4,
+    }
+
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            r = client.post(url, headers={"api-key": api_key, "Content-Type": "application/json"}, json=payload)
+        if not r.is_success:
+            raise HTTPException(status_code=502, detail=f"Azure OpenAI error: {r.status_code} {r.text}")
+        data = r.json()
+        content = data["choices"][0]["message"]["content"]
+        return {"provider": "azure_openai", "deployment": deployment, "text": content}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/v1/weather/current")
+def weather_current(lat: float, lon: float, units: str = "metric"):
+    api_key = os.getenv("OPENWEATHER_API_KEY") or os.getenv("VITE_OPENWEATHER_API")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="OpenWeather is not configured on the backend")
+
+    url = "https://api.openweathermap.org/data/2.5/weather"
+    params = {"lat": lat, "lon": lon, "appid": api_key, "units": units}
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            r = client.get(url, params=params)
+        if not r.is_success:
+            raise HTTPException(status_code=502, detail=f"OpenWeather error: {r.status_code} {r.text}")
+        return r.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
