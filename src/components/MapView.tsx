@@ -20,7 +20,7 @@ const MapView = ({ onZoomChange, onCenterChange }: MapViewProps) => {
 
     map.current = new maptilersdk.Map({
       container: mapContainer.current,
-      style: "https://api.maptiler.com/maps/backdrop-v4/{z}/{x}/{y}.png?key=19XDon3xsuxOLKdfcaZH",
+      style: "https://api.maptiler.com/maps/backdrop-v4/style.json?key=19XDon3xsuxOLKdfcaZH",
       center: [0, 20],
       zoom: 2,
       pitch: 0,
