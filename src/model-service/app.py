@@ -1,11 +1,3 @@
-import sys
-import os
-from pathlib import Path
-
-# Add current directory to path so imports work
-current_dir = Path(__file__).parent
-sys.path.append(str(current_dir))
-
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -13,6 +5,7 @@ from typing import List, Optional
 from datetime import datetime, timezone
 from math import radians, sin, cos, sqrt, atan2
 import json
+import os
 import time
 
 import httpx
@@ -42,7 +35,7 @@ async def lifespan(app: FastAPI):
     global _graphcast_task
     if os.getenv("GRAPHCAST_INGESTION_ENABLED", "").lower() in {"1", "true", "yes"}:
         try:
-            from graphcast_ingestion import start_graphcast_ingestion
+            from .graphcast_ingestion import start_graphcast_ingestion
             _graphcast_task = asyncio.create_task(start_graphcast_ingestion(pool))
             print("GraphCast ingestion started")
         except Exception as e:
@@ -852,7 +845,7 @@ async def trigger_graphcast_ingestion():
         raise HTTPException(status_code=503, detail="Database not available")
     
     try:
-        from graphcast_ingestion import get_graphcast_ingestor
+        from .graphcast_ingestion import get_graphcast_ingestor
         ingestor = get_graphcast_ingestor(pool)
         
         # Run ingestion in background

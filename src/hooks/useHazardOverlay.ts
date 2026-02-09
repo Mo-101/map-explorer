@@ -1,7 +1,13 @@
-﻿import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as maptilersdk from "@maptiler/sdk";
-import { Hotspot, CycloneTrack, Scenario, getCycloneCategory } from "@/types/disaster";
-import { fetchRealtimeThreats, fetchWeatherAnomalies } from "@/services/hazardsApi";
+import {
+  Hotspot,
+  CycloneTrack,
+  Scenario,
+  getProbabilityColor,
+  getCycloneCategory,
+} from "@/types/disaster";
+import { fetchRealtimeThreats } from "@/services/hazardsApi";
 
 const sampleHotspots: Hotspot[] = [
   {
@@ -77,27 +83,21 @@ const TRACK_SOURCE_ID = "afro-tracks";
 const TRACK_LAYER_MEAN = "afro-track-mean";
 const TRACK_LAYER_ENSEMBLE = "afro-track-ensemble";
 
-const getCoords = (t: any) => {
-  const lat = t.center_lat ?? t.latitude ?? t.lat ?? t.centerLat;
-  const lng = t.center_lng ?? t.center_lon ?? t.longitude ?? t.lng ?? t.lon ?? t.centerLon;
-  return { lat: Number(lat), lng: Number(lng) };
-};
-
-const fmtNum = (n: any, digits = 2) => {
+function fmtNum(n: any, digits = 2) {
   const v = typeof n === "string" ? Number(n) : n;
-  if (!Number.isFinite(v)) return "--";
+  if (!Number.isFinite(v)) return "—";
   return v.toFixed(digits);
-};
+}
 
-const titleCase = (s: any) => {
+function titleCase(s: any) {
   const v = String(s || "").trim();
   if (!v) return "Unknown";
   return v.charAt(0).toUpperCase() + v.slice(1);
-};
+}
 
-const tooltipHtml = (props: any) => {
+function tooltipHtml(props: any) {
   const type = titleCase(props?.type || props?.disaster_type);
-  const severity = props?.severity ? titleCase(props.severity) : "--";
+  const severity = props?.severity ? titleCase(props.severity) : "—";
   const title = props?.title ? String(props.title) : `${type} detection`;
   const conf = props?.confidence;
   const leadH = props?.lead_time_hours;
@@ -105,7 +105,7 @@ const tooltipHtml = (props: any) => {
   const pressure = props?.pressure_hpa;
   const cases = props?.cases;
   const deaths = props?.deaths;
-  const when = props?.timestamp ? new Date(props.timestamp).toLocaleString() : "--";
+  const when = props?.timestamp ? new Date(props.timestamp).toLocaleString() : "—";
   const lat = props?.lat;
   const lng = props?.lng;
 
@@ -129,11 +129,11 @@ const tooltipHtml = (props: any) => {
       ${props?.description ? `<div style="margin-top:8px;font-size:12px;opacity:.9">${String(props.description)}</div>` : ""}
     </div>
   `;
-};
+}
 
 export function useHazardOverlay(map: maptilersdk.Map | null) {
   const [hotspots, setHotspots] = useState<Hotspot[]>(sampleHotspots);
-  const [track] = useState<CycloneTrack | null>(null);
+  const [track, setTrack] = useState<CycloneTrack | null>(null);
   const hasAutoFitRef = useRef(false);
 
   // Fetch live threats from backend; fallback to samples
@@ -145,34 +145,32 @@ export function useHazardOverlay(map: maptilersdk.Map | null) {
         const data = await fetchRealtimeThreats();
         if (cancelled || !data) return;
 
-        const mapped: Hotspot[] = (data.threats || [])
-          .map((t: any, idx: number) => {
-            const { lat, lng } = getCoords(t);
-            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-            return {
-              id: t.id || `rt-${idx}`,
-              forecast_id: "live",
-              disaster_type: t.type || t.disaster_type || "unknown",
-              latitude: lat,
-              longitude: lng,
-              lead_time_hours: t.lead_time_days ? t.lead_time_days * 24 : t.lead_time_hours ?? 12,
-              hurricane_prob: t.detection_details?.track_probability ?? t.confidence ?? t.prob ?? 0.5,
-              wind_speed_kt: t.detection_details?.wind_speed ?? t.wind_speed_kt ?? 60,
-              pressure_hpa: t.detection_details?.min_pressure_hpa ?? t.pressure_hpa ?? 990,
-              created_at: t.created_at || t.timestamp,
-              title: t.title,
-              description: t.description,
-              severity: t.severity,
-              confidence: t.confidence,
-              cases: t.detection_details?.cases ?? t.cases,
-              deaths: t.detection_details?.deaths ?? t.deaths,
-            } as any;
-          })
-          .filter(Boolean);
+        const mapped: Hotspot[] = data.threats
+          .filter((t: any) => Number.isFinite(t.center_lat) && Number.isFinite(t.center_lng))
+          .map((t: any, idx: number) =>
+            ({
+            id: t.id || `rt-${idx}`,
+            forecast_id: "live",
+            disaster_type: t.type || "unknown",
+            latitude: t.center_lat,
+            longitude: t.center_lng,
+            lead_time_hours: t.lead_time_days ? t.lead_time_days * 24 : 12,
+            hurricane_prob: t.detection_details?.track_probability ?? t.confidence ?? 0.5,
+            wind_speed_kt: t.detection_details?.wind_speed ?? 60,
+            pressure_hpa: t.detection_details?.min_pressure_hpa ?? 990,
+            created_at: t.created_at || t.timestamp,
+            title: t.title,
+            description: t.description,
+            severity: t.severity,
+            confidence: t.confidence,
+            cases: t.detection_details?.cases ?? t.cases,
+            deaths: t.detection_details?.deaths ?? t.deaths,
+          } as any)
+          );
 
-        setHotspots(mapped.length ? mapped : sampleHotspots);
-      } catch (err) {
-        console.warn("Hazard fetch failed, keeping samples", err);
+        setHotspots(mapped);
+      } catch {
+        // keep sample on error
       }
     };
 
@@ -201,7 +199,7 @@ export function useHazardOverlay(map: maptilersdk.Map | null) {
             id: h.id,
             disaster_type: h.disaster_type,
             type: h.disaster_type,
-            prob: h.hurricane_prob ?? (h as any).track_prob ?? 0,
+            prob: h.hurricane_prob ?? h.track_prob ?? 0,
             wind_kt: h.wind_speed_kt ?? 0,
             lead_time: h.lead_time_hours,
             lead_time_hours: h.lead_time_hours,
