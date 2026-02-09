@@ -21,7 +21,7 @@ const MapView = ({ onZoomChange, onCenterChange, onMapReady }: MapViewProps) => 
 
     map.current = new maptilersdk.Map({
       container: mapContainer.current,
-      style: "https://api.maptiler.com/maps/backdrop-v4/style.json?key=19XDon3xsuxOLKdfcaZH",
+      style: maptilersdk.MapStyle.STREETS,
       center: [0, 20],
       zoom: 2,
       pitch: 0,
@@ -41,7 +41,10 @@ const MapView = ({ onZoomChange, onCenterChange, onMapReady }: MapViewProps) => 
       }
     });
 
-    onMapReady?.(map.current);
+    // Wait for style to load before notifying parent
+    map.current.on("load", () => {
+      onMapReady?.(map.current!);
+    });
 
     return () => {
       map.current?.remove();

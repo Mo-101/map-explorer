@@ -4,6 +4,7 @@ import MapView from "@/components/MapView";
 import MapControls from "@/components/MapControls";
 import WeatherControls from "@/components/WeatherControls";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
+import { useHazardOverlay } from "@/hooks/useHazardOverlay";
 
 const Index = () => {
   const [zoom, setZoom] = useState(2);
@@ -11,6 +12,7 @@ const Index = () => {
   const [mapInstance, setMapInstance] = useState<maptilersdk.Map | null>(null);
 
   const weather = useWeatherLayers(mapInstance);
+  useHazardOverlay(mapInstance);
 
   const handleMapReady = useCallback((map: maptilersdk.Map) => {
     setMapInstance(map);

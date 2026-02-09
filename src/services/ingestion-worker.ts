@@ -5,6 +5,28 @@ import { db } from '../lib/db';
  * Handles idempotent hazard synchronization and source watermarking.
  */
 
+function canonicalThreatType(rawType: string | null | undefined): string {
+  if (!rawType) return 'unknown';
+  const v = rawType.trim().toLowerCase();
+  const taxonomy: Record<string, Set<string>> = {
+    cyclone: new Set(['cyclone', 'tropical_cyclone', 'tc', 'tropical storm', 'hurricane', 'typhoon', 'tropical_depression']),
+    flood: new Set(['flood', 'flooding', 'flash_flood', 'river_flood']),
+    drought: new Set(['drought', 'dry_spell', 'water_scarcity']),
+    cholera: new Set(['cholera', 'awd']),
+    lassa: new Set(['lassa', 'lassa_fever', 'lassa fever', 'lf']),
+    meningitis: new Set(['meningitis', 'meningococcal', 'cerebro-spinal meningitis']),
+    malaria: new Set(['malaria']),
+    ebola: new Set(['ebola', 'evd', 'ebola virus disease']),
+    measles: new Set(['measles', 'rubeola']),
+    convergence: new Set(['convergence']),
+  };
+
+  for (const [canonical, aliases] of Object.entries(taxonomy)) {
+    if (aliases.has(v)) return canonical;
+  }
+  return v;
+}
+
 export async function syncHazardSource(source: string, fetcher: () => Promise<any[]>) {
   const now = new Date();
   
@@ -21,6 +43,7 @@ export async function syncHazardSource(source: string, fetcher: () => Promise<an
     
     // 2. Idempotent Upsert (ON CONFLICT)
     for (const record of records) {
+      const canonicalType = canonicalThreatType(record.type);
       await db.query(`
         INSERT INTO hazard_alerts (
           external_id, source, type, severity, title, description, lat, lng, event_at, intensity, metadata
@@ -30,10 +53,11 @@ export async function syncHazardSource(source: string, fetcher: () => Promise<an
           title = EXCLUDED.title,
           description = EXCLUDED.description,
           intensity = EXCLUDED.intensity,
+          type = EXCLUDED.type,
           metadata = EXCLUDED.metadata,
           updated_at = NOW()
       `, [
-        record.id, source, record.type, record.severity, record.title, 
+        record.id, source, canonicalType, record.severity, record.title, 
         record.description, record.lat, record.lng, record.event_at, 
         record.intensity, record.metadata
       ]);

@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timezone
+from math import radians, sin, cos, sqrt, atan2
 import json
 import os
 import time
@@ -35,6 +36,42 @@ class AiAnalyzeRequest(BaseModel):
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _canonical_threat_type(raw_type: str | None) -> str:
+    if not raw_type:
+        return "unknown"
+
+    v = raw_type.strip().lower()
+    taxonomy = {
+        "cyclone": {"cyclone", "tropical_cyclone", "tc", "tropical storm", "hurricane", "typhoon", "tropical_depression"},
+        "flood": {"flood", "flooding", "flash_flood", "river_flood"},
+        "drought": {"drought", "dry_spell", "water_scarcity"},
+        "cholera": {"cholera", "awd"},
+        "lassa": {"lassa", "lassa_fever", "lassa fever", "lf"},
+        "meningitis": {"meningitis", "meningococcal", "cerebro-spinal meningitis"},
+        "malaria": {"malaria"},
+        "ebola": {"ebola", "evd", "ebola virus disease"},
+        "measles": {"measles", "rubeola"},
+        "convergence": {"convergence"},
+    }
+
+    for canonical, aliases in taxonomy.items():
+        if v in aliases:
+            return canonical
+    return v
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6371.0
+    phi1 = radians(lat1)
+    phi2 = radians(lat2)
+    dphi = radians(lat2 - lat1)
+    dlambda = radians(lon2 - lon1)
+
+    a = sin(dphi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(dlambda / 2) ** 2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+    return r * c
 
 
 def _get_database_url() -> str:
@@ -156,10 +193,11 @@ def get_threats(limit: int = 100):
             or []
         )
 
+        canonical_type = _canonical_threat_type(hazard_type)
         threats.append(
             {
                 "id": external_id or f"{source}-{event_at.isoformat() if event_at else _utc_now_iso()}",
-                "threat_type": hazard_type or "unknown",
+                "threat_type": canonical_type,
                 "risk_level": (severity or "unknown").lower(),
                 "affected_regions": affected_regions,
                 "lead_time_days": metadata_obj.get("lead_time_days"),
@@ -177,11 +215,130 @@ def get_threats(limit: int = 100):
             }
         )
 
+    # --- Convergence persistence (DB-first) ---
+    # Convergences are stored back into hazard_alerts as source=convergence_engine
+    # so that downstream systems can query history directly from Azure Postgres.
+    climate_types = {"cyclone", "flood", "drought", "wildfire"}
+    health_types = {"cholera", "lassa", "meningitis", "malaria", "ebola", "measles"}
+    radius_km = float(os.getenv("CONVERGENCE_RADIUS_KM") or 500)
+
+    climate = [t for t in threats if t.get("threat_type") in climate_types and t.get("center_lat") is not None and t.get("center_lng") is not None]
+    health = [t for t in threats if t.get("threat_type") in health_types and t.get("center_lat") is not None and t.get("center_lng") is not None]
+
+    convergences = []
+    now_iso = _utc_now_iso()
+
+    for c in climate:
+        for h in health:
+            dist = _haversine_km(float(c["center_lat"]), float(c["center_lng"]), float(h["center_lat"]), float(h["center_lng"]))
+            if dist > radius_km:
+                continue
+
+            risk_multiplier = 1.5
+            pair = (c["threat_type"], h["threat_type"])
+            multipliers = {
+                ("cyclone", "cholera"): 2.5,
+                ("cyclone", "lassa"): 2.0,
+                ("flood", "cholera"): 3.0,
+                ("flood", "meningitis"): 1.5,
+                ("drought", "cholera"): 1.8,
+                ("drought", "meningitis"): 2.2,
+            }
+            risk_multiplier = multipliers.get(pair, risk_multiplier)
+
+            conv_id = f"conv-{c['id']}-{h['id']}"
+            affected_regions = sorted({*(c.get("affected_regions") or []), *(h.get("affected_regions") or [])})
+            conv_lat = (float(c["center_lat"]) + float(h["center_lat"])) / 2
+            conv_lng = (float(c["center_lng"]) + float(h["center_lng"])) / 2
+
+            conv = {
+                "id": conv_id,
+                "threat_type": "convergence",
+                "risk_level": "high" if risk_multiplier >= 2 else "moderate",
+                "affected_regions": affected_regions,
+                "lead_time_days": min([x for x in [c.get("lead_time_days"), h.get("lead_time_days")] if isinstance(x, (int, float))], default=None),
+                "confidence": max([x for x in [c.get("confidence"), h.get("confidence")] if isinstance(x, (int, float))], default=None),
+                "center_lat": conv_lat,
+                "center_lng": conv_lng,
+                "detection_details": {
+                    "source": "convergence_engine",
+                    "climate_threat_id": c["id"],
+                    "health_threat_id": h["id"],
+                    "climate_type": c["threat_type"],
+                    "health_type": h["threat_type"],
+                    "distance_km": round(dist, 2),
+                    "risk_multiplier": risk_multiplier,
+                },
+                "created_at": now_iso,
+            }
+            convergences.append(conv)
+
+    # Store convergences to DB (idempotent upsert). If schema doesn't match,
+    # we fail safe by skipping persistence but still return computed convergences.
+    if pool and convergences:
+        try:
+            pool.open()
+            with pool.connection() as conn:
+                with conn.cursor() as cur:
+                    for conv in convergences:
+                        cur.execute(
+                            """
+                            INSERT INTO hazard_alerts (
+                              external_id, source, type, severity, title, description,
+                              lat, lng, event_at, intensity, metadata, is_active
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s, %s, TRUE)
+                            ON CONFLICT (source, external_id) DO UPDATE SET
+                              type = EXCLUDED.type,
+                              severity = EXCLUDED.severity,
+                              title = EXCLUDED.title,
+                              description = EXCLUDED.description,
+                              lat = EXCLUDED.lat,
+                              lng = EXCLUDED.lng,
+                              intensity = EXCLUDED.intensity,
+                              metadata = EXCLUDED.metadata,
+                              is_active = TRUE,
+                              updated_at = NOW()
+                            """,
+                            (
+                                conv["id"],
+                                "convergence_engine",
+                                "convergence",
+                                conv["risk_level"],
+                                f"Convergence: {conv['detection_details']['climate_type']} + {conv['detection_details']['health_type']}",
+                                "Climate and health threats intersect within radius",
+                                conv["center_lat"],
+                                conv["center_lng"],
+                                conv["detection_details"]["risk_multiplier"],
+                                json.dumps({
+                                    **conv["detection_details"],
+                                    "affected_regions": conv.get("affected_regions") or [],
+                                    "lead_time_days": conv.get("lead_time_days"),
+                                    "confidence": conv.get("confidence"),
+                                }),
+                            ),
+                        )
+
+                    # Deactivate stale convergence rows (older than 72h since updated)
+                    cur.execute(
+                        """
+                        UPDATE hazard_alerts
+                        SET is_active = FALSE
+                        WHERE source = %s
+                          AND is_active = TRUE
+                          AND updated_at < NOW() - INTERVAL '72 hours'
+                        """,
+                        ("convergence_engine",),
+                    )
+        except Exception:
+            pass
+
+    all_threats = threats + convergences
+
     return {
         "timestamp": _utc_now_iso(),
-        "threats": threats,
-        "count": len(threats),
-        "sources": sorted({t["detection_details"]["source"] for t in threats if t["detection_details"].get("source")}),
+        "threats": all_threats,
+        "count": len(all_threats),
+        "sources": sorted({t["detection_details"]["source"] for t in all_threats if t.get("detection_details", {}).get("source")}),
         "model_version": os.getenv("MODEL_VERSION") or "live",
     }
 
