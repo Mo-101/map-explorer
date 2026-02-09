@@ -8,6 +8,7 @@
  */
 
 import type { Map as MapLibreMap } from 'maplibre-gl';
+import maplibregl from 'maplibre-gl';
 import { MoScript } from '../types/moscript';
 
 // =============================================================================
@@ -146,34 +147,15 @@ function animatePulse(map: MapLibreMap, layerId: string, baseSize: number): void
 }
 
 /**
- * Get color based on threat type
- */
-function getThreatColor(threatType: string): string {
-  const colors: Record<string, string> = {
-    cyclone: '#ff0000',      // Red
-    flood: '#0066ff',        // Blue
-    landslide: '#ff8800',    // Orange
-    outbreak: '#ff00ff',     // Magenta
-    convergence: '#ff0088'   // Pink
-  };
-  
-  return colors[threatType] || '#666666';
-}
-
-/**
- * Get size based on confidence/severity
+ * Get size based on threat severity
  */
 function getThreatSize(threat: ThreatData): number {
-  const baseSize = 15;
-  
-  if (threat.confidence) {
-    return baseSize + (threat.confidence * 10);
-  }
+  const baseSize = 20;
   
   if (threat.severity) {
     const sizeMap: Record<string, number> = {
-      'low': baseSize,
-      'moderate': baseSize + 5,
+      'low': baseSize - 5,
+      'moderate': baseSize,
       'high': baseSize + 10,
       'severe': baseSize + 15,
       'critical': baseSize + 20
@@ -182,6 +164,36 @@ function getThreatSize(threat: ThreatData): number {
   }
   
   return baseSize;
+}
+
+/**
+ * Get threat emoji for display
+ */
+function getThreatEmoji(type: string): string {
+  const emojis: Record<string, string> = {
+    cyclone: '🌪️',
+    flood: '🌊',
+    landslide: '⛰️',
+    outbreak: '🦠',
+    cholera: '🦠',
+    convergence: '🔄'
+  };
+  return emojis[type] || '⚠️';
+}
+
+/**
+ * Get threat color for display
+ */
+function getThreatColor(type: string): string {
+  const colors: Record<string, string> = {
+    cyclone: '#ef4444',
+    flood: '#3b82f6',
+    landslide: '#f97316',
+    outbreak: '#ec4899',
+    cholera: '#ec4899',
+    convergence: '#8b5cf6'
+  };
+  return colors[type] || '#6b7280';
 }
 
 /**
@@ -199,8 +211,13 @@ function addThreatPopup(map: MapLibreMap, threat: ThreatData): void {
     // Calculate estimated impact based on threat type and severity
     const impactInfo = calculateThreatImpact(threat);
     
+    // Determine detection source
+    const detectionSource = threat.detection_details?.detection_source || 'MoScripts Intelligence';
+    const detectionModel = threat.detection_details?.model || 'GraphCast ML';
+    const confidence = ((threat.confidence || 0) * 100).toFixed(0);
+    
     const popupContent = `
-      <div style="padding: 12px; font-family: system-ui, -apple-system, sans-serif; max-width: 320px;">
+      <div style="padding: 12px; font-family: system-ui, -apple-system, sans-serif; max-width: 350px;">
         <div style="display: flex; align-items: center; margin-bottom: 12px;">
           <div style="
             width: 12px; 
@@ -210,14 +227,25 @@ function addThreatPopup(map: MapLibreMap, threat: ThreatData): void {
             margin-right: 8px;
           "></div>
           <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: #1f2937;">
-            ${threat.threat_type.toUpperCase()}
+            ${getThreatEmoji(threat.threat_type)} ${threat.threat_type.toUpperCase()}
           </h3>
+        </div>
+        
+        <!-- Detection Source Info -->
+        <div style="background: #f0f9ff; padding: 8px; border-radius: 6px; margin-bottom: 12px; border-left: 3px solid #0ea5e9;">
+          <div style="font-weight: 600; color: #075985; margin-bottom: 4px;">🔍 DETECTION SOURCE</div>
+          <div style="color: #0c4a6e; font-size: 13px; line-height: 1.4;">
+            <div><strong>System:</strong> ${detectionSource}</div>
+            <div><strong>Model:</strong> ${detectionModel}</div>
+            <div><strong>Confidence:</strong> ${confidence}%</div>
+            <div><strong>Method:</strong> ${threat.detection_details?.detection_method || 'Anomaly Detection'}</div>
+          </div>
         </div>
         
         <div style="background: #f8fafc; padding: 8px; border-radius: 6px; margin-bottom: 12px; border-left: 3px solid ${getThreatColor(threat.threat_type)};">
           <div style="font-weight: 600; color: #374151; margin-bottom: 4px;">📍 Detection Location</div>
           <div style="color: #6b7280; font-size: 14px;">
-            ${threat.center_lat?.toFixed(4) || threat.latitude?.toFixed(4) || 'N/A'}°, 
+            <strong>Coordinates:</strong> ${threat.center_lat?.toFixed(4) || threat.latitude?.toFixed(4) || 'N/A'}°, 
             ${threat.center_lng?.toFixed(4) || threat.longitude?.toFixed(4) || 'N/A'}°
           </div>
           ${threat.affected_regions?.length ? `
@@ -254,7 +282,7 @@ function addThreatPopup(map: MapLibreMap, threat: ThreatData): void {
         <div style="background: #ecfdf5; padding: 8px; border-radius: 6px; margin-bottom: 12px;">
           <div style="font-weight: 600; color: #065f46; margin-bottom: 4px;">📊 Detection Details</div>
           <div style="color: #047857; font-size: 13px; line-height: 1.4;">
-            <div><strong>Confidence:</strong> ${((threat.confidence || 0) * 100).toFixed(0)}%</div>
+            <div><strong>ID:</strong> ${threat.id}</div>
             <div><strong>Lead Time:</strong> ${threat.lead_time_days ? `${threat.lead_time_days} days` : 'N/A'}</div>
             ${threat.detection_details?.wind_speed ? `
               <div><strong>Wind Speed:</strong> ${Math.round(threat.detection_details.wind_speed)} knots</div>
@@ -282,15 +310,29 @@ function addThreatPopup(map: MapLibreMap, threat: ThreatData): void {
         
         <div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #9ca3af;">
           <div><strong>Detected:</strong> ${new Date(threat.created_at || threat.timestamp || Date.now()).toLocaleString()}</div>
-          <div><strong>ID:</strong> ${threat.id}</div>
           <div style="margin-top: 4px; color: #059669; font-weight: 600;">
-            🔥 MoScripts Intelligence System
+            🔥 MoScripts Intelligence System (GraphCast + AI)
           </div>
         </div>
       </div>
     `;
     
-    new (window as any).maplibregl.Popup()
+    // Check if MapLibre Popup is available
+    const MapLibrePopup = maplibregl.Popup;
+    
+    if (!MapLibrePopup) {
+      console.error('❌ MapLibre Popup not available - using fallback alert');
+      alert(`🌪️ ${threat.threat_type.toUpperCase()}\n\n📍 Location: ${threat.center_lat?.toFixed(2) || 'N/A'}°, ${threat.center_lng?.toFixed(2) || 'N/A'}°\n\n🔍 Source: ${detectionSource}\n🤖 Model: ${detectionModel}\n\n⚠️ Confidence: ${confidence}%\n\n🔥 MoScripts Intelligence`);
+      return;
+    }
+    
+    new MapLibrePopup({
+      closeButton: true,
+      closeOnClick: false,
+      maxWidth: '400px',
+      className: 'threat-detection-popup',
+      offset: 25
+    })
       .setLngLat(e.lngLat)
       .setHTML(popupContent)
       .addTo(map);

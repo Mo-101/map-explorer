@@ -5,6 +5,7 @@ import MapControls from "@/components/MapControls";
 import WeatherControls from "@/components/WeatherControls";
 import BackendStatusBadge from "@/components/BackendStatusBadge";
 import { MoScriptsTest } from "@/components/MoScriptsTest";
+import { TooltipTest } from "@/components/TooltipTest";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
 import { orchestrator, emit } from "@/moscripts";
 import { mo_THREAT_RENDERER } from "@/moscripts";
@@ -45,11 +46,11 @@ const Index = () => {
         
         // 🔥 TRIGGER MOSCRIPT via event
         await emit('onThreatsUpdate', {
-          threats: data?.threats || [],
+          threats: data?.threats || data?.cyclones || data?.floods || data?.landslides || [],
           mapInstance
         });
       } catch (error) {
-        console.error('Failed to load threats:', error);
+        console.error('❌ Index: Failed to load threats:', error);
       }
     }
 
@@ -70,6 +71,7 @@ const Index = () => {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-background">
+      <TooltipTest />
       <MoScriptsTest />
       <MapView
         onZoomChange={setZoom}

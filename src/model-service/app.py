@@ -21,6 +21,16 @@ except ImportError as e:
     print(f"Weather anomaly detection module not available: {e}")
     WeatherAnomalyDetector = None
 
+# Import MoScripts intelligence modules
+try:
+    from moscripts.mo_graphcast_detector import detect_weather_anomalies
+    from moscripts.mo_mostar_ai import analyze_with_mostar
+    MOSCRIPTS_AVAILABLE = True
+    print("🔥 MoScripts backend modules loaded successfully")
+except ImportError as e:
+    print(f"MoScripts not available: {e}")
+    MOSCRIPTS_AVAILABLE = False
+
 # Load env for local dev only; Azure App Service should provide env vars via App Settings.
 if os.getenv("WEBSITE_SITE_NAME") is None:
     load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env.local"))
@@ -957,53 +967,113 @@ def run_inference_v1(req: InferenceRequest):
 
 @app.post("/api/v1/ai/analyze")
 def ai_analyze(req: AiAnalyzeRequest):
-    # For now, return a mock response since Azure OpenAI deployment is not available
-    return {
-        "response": f"AI analysis for: {req.prompt}\n\nNote: Azure OpenAI deployment 'AFRO-AI' is not configured. Please set up the deployment in Azure portal or configure a different AI provider.",
-        "model": "mock-response",
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
+    """Analyze query using MoStar AI Multi-Model Mesh (Azure + Gemini)"""
+    if MOSCRIPTS_AVAILABLE:
+        # Use MoScripts for multi-model AI analysis with voice lines
+        try:
+            result = analyze_with_mostar(req.prompt, req.context or "")
+            
+            return {
+                "response": result['synthesis'],
+                "azure_analysis": result['azure_analysis'],
+                "gemini_analysis": result['gemini_analysis'],
+                "combined_confidence": result['combined_confidence'],
+                "models_used": result['models_used'],
+                "processing_time": result['processing_time'],
+                "mesh_status": result['mesh_status'],
+                "moscripts_enabled": True,
+                "intelligence_system": "MoStar AI Multi-Model Mesh v1.0",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"MoStar AI analysis failed: {str(e)}")
+    else:
+        # Fallback to mock response
+        return {
+            "response": f"AI analysis for: {req.prompt}\n\nNote: MoStar AI Multi-Model Mesh is not available. Please configure Azure OpenAI and Gemini API keys.",
+            "model": "mock-response",
+            "moscripts_enabled": False,
+            "intelligence_system": "Legacy AI Mock",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
 
 
 @app.get("/api/v1/weather/anomalies")
 async def get_weather_anomalies():
-    """Detect cyclones, floods, landslides from GraphCast data"""
-    if WeatherAnomalyDetector is None:
-        raise HTTPException(status_code=501, detail="Weather anomaly detection module not available")
-    
-    try:
-        detector = WeatherAnomalyDetector()
+    """Detect cyclones, floods, landslides from GraphCast data using MoScripts"""
+    if MOSCRIPTS_AVAILABLE:
+        # Use MoScripts for intelligent detection with voice lines
+        try:
+            # Mock GraphCast data for now - in production this would be real data
+            mock_graphcast_data = {
+                'u_component_of_wind': [[10, 15, 20, 25, 30], [35, 40, 45, 50, 55], [60, 65, 70, 75, 80], 
+                                       [85, 90, 95, 100, 105], [110, 115, 120, 125, 130]],
+                'v_component_of_wind': [[5, 10, 15, 20, 25], [30, 35, 40, 45, 50], [55, 60, 65, 70, 75],
+                                       [80, 85, 90, 95, 100], [105, 110, 115, 120, 125]],
+                'sea_level_pressure': [[1010, 1005, 1000, 995, 990], [985, 980, 975, 970, 965], [960, 955, 950, 945, 940],
+                                       [935, 930, 925, 920, 915], [910, 905, 900, 895, 890]],
+                'total_precipitation': [[0.01, 0.05, 0.1, 0.15, 0.2], [0.25, 0.3, 0.35, 0.4, 0.45], [0.5, 0.55, 0.6, 0.65, 0.7],
+                                       [0.75, 0.8, 0.85, 0.9, 0.95], [1.0, 1.05, 1.1, 1.15, 1.2]],
+                'soil_moisture': [[0.6, 0.7, 0.8, 0.85, 0.9], [0.92, 0.94, 0.96, 0.98, 1.0], [0.95, 0.97, 0.99, 1.0, 1.0],
+                                     [0.9, 0.92, 0.94, 0.96, 0.98], [0.85, 0.87, 0.89, 0.91, 0.93]]
+            }
+            
+            # Use MoScripts for detection with voice lines
+            result = detect_weather_anomalies(mock_graphcast_data)
+            
+            return {
+                "timestamp": result['timestamp'],
+                "cyclones": result['cyclones'],
+                "floods": result['floods'],
+                "landslides": result['landslides'],
+                "convergences": result['convergences'],
+                "total_hazards": result['total_hazards'],
+                "detection_time": result['detection_time'],
+                "moscripts_enabled": True,
+                "intelligence_system": "MoScripts Backend v1.0"
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"MoScripts detection failed: {str(e)}")
+    else:
+        # Fallback to original implementation
+        if WeatherAnomalyDetector is None:
+            raise HTTPException(status_code=501, detail="Weather anomaly detection module not available")
         
-        # TODO: Replace with real GraphCast output - using sample data for now
-        # In production, this would fetch from your GraphCast ingestion system
-        sample_graphcast_data = {
-            'u_component_of_wind': [[10, 15, 20, 25, 30], [35, 40, 45, 50, 55], [60, 65, 70, 75, 80], 
-                                   [85, 90, 95, 100, 105], [110, 115, 120, 125, 130]],
-            'v_component_of_wind': [[5, 10, 15, 20, 25], [30, 35, 40, 45, 50], [55, 60, 65, 70, 75],
-                                   [80, 85, 90, 95, 100], [105, 110, 115, 120, 125]],
-            'sea_level_pressure': [[1010, 1005, 1000, 995, 990], [985, 980, 975, 970, 965], [960, 955, 950, 945, 940],
-                                   [935, 930, 925, 920, 915], [910, 905, 900, 895, 890]],
-            'total_precipitation': [[0.01, 0.05, 0.1, 0.15, 0.2], [0.25, 0.3, 0.35, 0.4, 0.45], [0.5, 0.55, 0.6, 0.65, 0.7],
-                                   [0.75, 0.8, 0.85, 0.9, 0.95], [1.0, 1.05, 1.1, 1.15, 1.2]],
-            'soil_moisture': [[0.6, 0.7, 0.8, 0.85, 0.9], [0.92, 0.94, 0.96, 0.98, 1.0], [0.95, 0.97, 0.99, 1.0, 1.0],
-                             [0.9, 0.92, 0.94, 0.96, 0.98], [0.85, 0.87, 0.89, 0.91, 0.93]]
-        }
-        
-        results = detector.detect_all_hazards(sample_graphcast_data)
-        
-        return {
-            "timestamp": datetime.now().isoformat(),
-            "cyclones": results['cyclones'],
-            "floods": results['floods'],
-            "landslides": results['landslides'],
-            "convergences": results['convergences'],
-            "total_hazards": len(results['cyclones']) + len(results['floods']) + len(results['landslides']),
-            "convergence_zones": len(results['convergences']),
-            "detection_confidence": "high" if len(results['convergences']) > 0 else "moderate"
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Weather anomaly detection failed: {str(e)}")
+        try:
+            detector = WeatherAnomalyDetector()
+            
+            # TODO: Replace with real GraphCast output - using sample data for now
+            # In production, this would fetch from your GraphCast ingestion system
+            sample_graphcast_data = {
+                'u_component_of_wind': [[10, 15, 20, 25, 30], [35, 40, 45, 50, 55], [60, 65, 70, 75, 80], 
+                                       [85, 90, 95, 100, 105], [110, 115, 120, 125, 130]],
+                'v_component_of_wind': [[5, 10, 15, 20, 25], [30, 35, 40, 45, 50], [55, 60, 65, 70, 75],
+                                       [80, 85, 90, 95, 100], [105, 110, 115, 120, 125]],
+                'sea_level_pressure': [[1010, 1005, 1000, 995, 990], [985, 980, 975, 970, 965], [960, 955, 950, 945, 940],
+                                       [935, 930, 925, 920, 915], [910, 905, 900, 895, 890]],
+                'total_precipitation': [[0.01, 0.05, 0.1, 0.15, 0.2], [0.25, 0.3, 0.35, 0.4, 0.45], [0.5, 0.55, 0.6, 0.65, 0.7],
+                                       [0.75, 0.8, 0.85, 0.9, 0.95], [1.0, 1.05, 1.1, 1.15, 1.2]],
+                'soil_moisture': [[0.6, 0.7, 0.8, 0.85, 0.9], [0.92, 0.94, 0.96, 0.98, 1.0], [0.95, 0.97, 0.99, 1.0, 1.0],
+                                     [0.9, 0.92, 0.94, 0.96, 0.98], [0.85, 0.87, 0.89, 0.91, 0.93]]
+            }
+            
+            results = detector.detect_all_hazards(sample_graphcast_data)
+            
+            return {
+                "timestamp": datetime.now().isoformat(),
+                "cyclones": results['cyclones'],
+                "floods": results['floods'],
+                "landslides": results['landslides'],
+                "convergences": results['convergences'],
+                "total_hazards": len(results['cyclones']) + len(results['floods']) + len(results['landslides']),
+                "convergence_zones": len(results['convergences']),
+                "detection_confidence": "high" if len(results['convergences']) > 0 else "moderate",
+                "moscripts_enabled": False,
+                "intelligence_system": "Legacy Weather Detection"
+            }
+            
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Weather anomaly detection failed: {str(e)}")
 
 
 @app.get("/api/v1/weather/current")
