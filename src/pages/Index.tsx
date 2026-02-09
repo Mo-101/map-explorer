@@ -1,11 +1,14 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type * as maptilersdk from "@maptiler/sdk";
 import MapView from "@/components/MapView";
 import MapControls from "@/components/MapControls";
 import WeatherControls from "@/components/WeatherControls";
 import BackendStatusBadge from "@/components/BackendStatusBadge";
+import { MoScriptsTest } from "@/components/MoScriptsTest";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
-import { useHazardOverlay } from "@/hooks/useHazardOverlay";
+import { orchestrator, emit } from "@/moscripts";
+import { mo_THREAT_RENDERER } from "@/moscripts";
+import { fetchRealtimeThreats } from "@/services/hazardsApi";
 
 const Index = () => {
   const [zoom, setZoom] = useState(2);
@@ -13,14 +16,61 @@ const Index = () => {
   const [mapInstance, setMapInstance] = useState<maptilersdk.Map | null>(null);
 
   const weather = useWeatherLayers(mapInstance);
-  useHazardOverlay(mapInstance);
+
+  // Register MoScripts on mount
+  useEffect(() => {
+    console.log('🔥 Registering MoScripts...');
+    
+    // Register threat renderer MoScript
+    orchestrator.register(mo_THREAT_RENDERER);
+    
+    // Log stats
+    const stats = orchestrator.getStats();
+    console.log('📊 Orchestrator stats:', stats);
+    console.log('📋 Registered scripts:', orchestrator.getRegisteredScripts());
+    
+    return () => {
+      // Cleanup on unmount
+      orchestrator.clear();
+    };
+  }, []);
+
+  // Fetch and render threats using MoScripts
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    async function loadThreats() {
+      try {
+        const data = await fetchRealtimeThreats();
+        
+        // 🔥 TRIGGER MOSCRIPT via event
+        await emit('onThreatsUpdate', {
+          threats: data?.threats || [],
+          mapInstance
+        });
+      } catch (error) {
+        console.error('Failed to load threats:', error);
+      }
+    }
+
+    // Initial load
+    loadThreats();
+    
+    // Poll every 30 seconds
+    const interval = setInterval(loadThreats, 30000);
+    return () => clearInterval(interval);
+  }, [mapInstance]);
 
   const handleMapReady = useCallback((map: maptilersdk.Map) => {
     setMapInstance(map);
+    
+    // 🔥 TRIGGER MOSCRIPT via event when map loads
+    emit('onMapLoad', { mapInstance: map });
   }, []);
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-background">
+      <MoScriptsTest />
       <MapView
         onZoomChange={setZoom}
         onCenterChange={(lng, lat) => setCoordinates({ lng, lat })}

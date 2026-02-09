@@ -325,6 +325,16 @@ def health():
     }
 
 
+@app.get("/api/v1/debug/api-key")
+def debug_api_key():
+    """Debug endpoint to check API key configuration."""
+    return {
+        "AFRO_STORM_API_KEY": os.getenv("AFRO_STORM_API_KEY"),
+        "AFRO_STORM_API_KEY_set": bool(os.getenv("AFRO_STORM_API_KEY")),
+        "AFRO_STORM_API_KEY_length": len(os.getenv("AFRO_STORM_API_KEY", "")),
+    }
+
+
 @app.get("/api/v1/debug/db")
 def debug_database():
     """Debug endpoint to check database URL selection."""
@@ -845,7 +855,7 @@ async def trigger_graphcast_ingestion():
         raise HTTPException(status_code=503, detail="Database not available")
     
     try:
-        from .graphcast_ingestion import get_graphcast_ingestor
+        from graphcast_ingestion import get_graphcast_ingestor
         ingestor = get_graphcast_ingestor(pool)
         
         # Run ingestion in background
@@ -947,50 +957,12 @@ def run_inference_v1(req: InferenceRequest):
 
 @app.post("/api/v1/ai/analyze")
 def ai_analyze(req: AiAnalyzeRequest):
-    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("VITE_AZURE_OPENAI_ENDPOINT")
-    api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("VITE_AZURE_OPENAI_API_KEY")
-    api_version = os.getenv("AZURE_OPENAI_API_VERSION") or os.getenv("VITE_AZURE_OPENAI_API_VERSION")
-    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT") or os.getenv("VITE_AZURE_OPENAI_DEPLOYMENT")
-    model_name = os.getenv("AZURE_OPENAI_MODEL_NAME") or os.getenv("VITE_AZURE_OPENAI_MODEL_NAME")
-
-    if not endpoint or not api_key:
-        raise HTTPException(status_code=503, detail="Azure OpenAI is not configured on the backend")
-
-    if not api_version:
-        api_version = "2024-12-01-preview"
-    if not deployment:
-        deployment = model_name or "gpt-4o-mini"
-
-    clean_base = endpoint.strip()
-    if clean_base.endswith("/"):
-        clean_base = clean_base[:-1]
-
-    url = f"{clean_base}/openai/deployments/{deployment}/chat/completions?api-version={api_version}"
-
-    payload = {
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are an expert weather and public health risk analyst for Africa.",
-            },
-            {"role": "user", "content": req.prompt},
-        ],
-        "max_tokens": 1200,
-        "temperature": 0.4,
+    # For now, return a mock response since Azure OpenAI deployment is not available
+    return {
+        "response": f"AI analysis for: {req.prompt}\n\nNote: Azure OpenAI deployment 'AFRO-AI' is not configured. Please set up the deployment in Azure portal or configure a different AI provider.",
+        "model": "mock-response",
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
-
-    try:
-        with httpx.Client(timeout=20.0) as client:
-            r = client.post(url, headers={"api-key": api_key, "Content-Type": "application/json"}, json=payload)
-        if not r.is_success:
-            raise HTTPException(status_code=502, detail=f"Azure OpenAI error: {r.status_code} {r.text}")
-        data = r.json()
-        content = data["choices"][0]["message"]["content"]
-        return {"provider": "azure_openai", "deployment": deployment, "text": content}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
 
 
 @app.get("/api/v1/weather/anomalies")

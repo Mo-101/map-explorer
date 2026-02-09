@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MoScripts Test</title>
+</head>
+<body>
+    <h1>MoScripts Integration Test</h1>
+    <div id="output"></div>
+    
+    <script type="module">
+        // Test if MoScripts can be imported
+        import { orchestrator, emit } from './src/moscripts/index.js';
+        import { mo_THREAT_RENDERER } from './src/moscripts/visualization/index.js';
+        
+        const output = document.getElementById('output');
+        
+        // Register MoScript
+        orchestrator.register(mo_THREAT_RENDERER);
+        
+        // Log stats
+        output.innerHTML += `
+            <h2>✅ MoScripts Successfully Imported!</h2>
+            <p><strong>Registered Scripts:</strong> ${orchestrator.getRegisteredScripts().length}</p>
+            <p><strong>Orchestrator Stats:</strong> ${JSON.stringify(orchestrator.getStats(), null, 2)}</p>
+            <h3>Voice Lines Test:</h3>
+        `;
+        
+        // Test MoScript directly
+        const mockMap = {
+            addSource: () => {},
+            addLayer: () => {},
+            getLayer: () => false,
+            getSource: () => false,
+            removeLayer: () => {},
+            removeSource: () => {},
+            on: () => {},
+            off: () => {},
+            getStyle: () => ({ layers: [] })
+        };
+        
+        const testThreats = [
+            {
+                id: 'test-001',
+                threat_type: 'cyclone',
+                center_lat: -18.6,
+                center_lng: 45.1,
+                confidence: 0.8,
+                severity: 'high'
+            }
+        ];
+        
+        // Test the MoScript
+        mo_THREAT_RENDERER.logic({
+            threats: testThreats,
+            mapInstance: mockMap
+        }).then(result => {
+            const voiceLine = mo_THREAT_RENDERER.voiceLine(result, { threats: testThreats, mapInstance: mockMap });
+            output.innerHTML += `<p>🔥 <strong>MoScript Voice Line:</strong> ${voiceLine}</p>`;
+        }).catch(error => {
+            output.innerHTML += `<p>❌ <strong>Error:</strong> ${error.message}</p>`;
+        });
+        
+        // Test event emission
+        emit('onThreatsUpdate', {
+            threats: testThreats,
+            mapInstance: mockMap
+        }).then(() => {
+            output.innerHTML += `<p>✅ <strong>Event Emission:</strong> onThreatsUpdate triggered successfully</p>`;
+        });
+        
+    </script>
+</body>
+</html>
