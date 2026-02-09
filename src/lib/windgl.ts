@@ -306,7 +306,7 @@ export default class WindGL {
     this.drawTexture(this.backgroundTexture, this.fadeOpacity);
     this.drawParticles();
 
-    bindFramebuffer(gl, null);
+    bindFramebuffer(gl, null, null);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     this.drawTexture(this.screenTexture, 1.0);

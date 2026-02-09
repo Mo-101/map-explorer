@@ -4,7 +4,19 @@
  * No external AI providers - sovereign African health intelligence
  */
 
-import { DisasterType, MapEvent } from "../types";
+import { DisasterType } from "../types/disaster";
+
+interface MapEvent {
+  id: string;
+  type: string;
+  location: string;
+  lat: number;
+  lng: number;
+  intensity: number;
+  description: string;
+  timestamp: string;
+  source: string;
+}
 import { fetchAzureAnalysis } from "./azureService";
 
 // Batch cache for 30 minutes
