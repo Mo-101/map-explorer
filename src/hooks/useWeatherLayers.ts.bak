@@ -9,12 +9,7 @@ import {
   ColorRamp,
 } from "@maptiler/weather";
 
-export type WeatherLayerType =
-  | "wind"
-  | "precipitation"
-  | "pressure"
-  | "radar"
-  | "temperature";
+export type WeatherLayerType = "wind" | "precipitation" | "pressure" | "radar" | "temperature";
 
 interface WeatherLayerConfig {
   layer: any | null;
@@ -27,7 +22,7 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
     precipitation: { layer: null, value: "value", units: " mm" },
     pressure: { layer: null, value: "value", units: " hPa" },
     radar: { layer: null, value: "value", units: " dBZ" },
-    temperature: { layer: null, value: "value", units: " Â°C" },
+    temperature: { layer: null, value: "value", units: "°" },
     wind: { layer: null, value: "speedMetersPerSecond", units: " m/s" },
   });
 
@@ -39,7 +34,6 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
   const [sliderMax, setSliderMax] = useState(0);
   const [pointerValue, setPointerValue] = useState("");
   const [ready, setReady] = useState(false);
-  const PLAY_SPEED = 7200; // seconds per second (2x realtime) for smooth auto animation
 
   const currentTimeRef = useRef<number | null>(null);
   const pointerLngLatRef = useRef<{ lng: number; lat: number } | null>(null);
@@ -76,49 +70,22 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
     let weatherLayer: any = null;
     switch (type) {
       case "precipitation":
-        weatherLayer = new PrecipitationLayer({
-          id: "precipitation",
-          opacity: 0.9,
-          smooth: true,
-          colorramp:
-            // vivid, wide range ramp
-            // @ts-ignore MapTiler SDK ships this ramp in latest versions
-            (ColorRamp.builtin as any).PRECIPITATION_V2 || ColorRamp.builtin.PRECIPITATION,
-        });
+        weatherLayer = new PrecipitationLayer({ id: "precipitation" });
         break;
       case "pressure":
-        weatherLayer = new PressureLayer({
-          id: "pressure",
-          opacity: 0.9,
-          smooth: true,
-          colorramp: ColorRamp.builtin.MAKO.scale(900, 1080),
-        });
+        weatherLayer = new PressureLayer({ opacity: 0.8, id: "pressure" });
         break;
       case "radar":
-        weatherLayer = new RadarLayer({
-          id: "radar",
-          opacity: 0.85,
-          smooth: true,
-          colorramp: ColorRamp.builtin.RADAR_CLOUD,
-        });
+        weatherLayer = new RadarLayer({ opacity: 0.8, id: "radar" });
         break;
       case "temperature":
         weatherLayer = new TemperatureLayer({
-          colorramp: ColorRamp.builtin.TURBO.scale(-40, 50),
-          opacity: 0.9,
-          smooth: true,
+          colorramp: ColorRamp.builtin.TEMPERATURE_3,
           id: "temperature",
         });
         break;
       case "wind":
-        weatherLayer = new WindLayer({
-          id: "wind",
-          opacity: 0.9,
-          colorramp: ColorRamp.builtin.VIRIDIS.scale(0, 40),
-          particleFadeOpacity: 0.7,
-          particleMultiplier: 1.35,
-          particleSpeed: 0.75,
-        });
+        weatherLayer = new WindLayer({ id: "wind" });
         break;
     }
 
@@ -142,10 +109,6 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
         setSliderMax(+endDate);
         setSliderValue(+currentDate);
       }
-      // Auto-play as soon as data is ready
-      weatherLayer.animateByFactor(PLAY_SPEED);
-      setIsPlaying(true);
-      refreshTime();
     });
 
     weatherLayers.current[type].layer = weatherLayer;
@@ -176,8 +139,6 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
     } else {
       map.addLayer(weatherLayer, "Water");
     }
-    weatherLayer.animateByFactor(PLAY_SPEED);
-    setIsPlaying(true);
   }, [map, createWeatherLayer]);
 
   const togglePlayPause = useCallback(() => {
