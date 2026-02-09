@@ -4,6 +4,7 @@ import MapView from "@/components/MapView";
 import MapControls from "@/components/MapControls";
 import WeatherControls from "@/components/WeatherControls";
 import BackendStatusBadge from "@/components/BackendStatusBadge";
+import AnomalyLayer from "@/components/AnomalyLayer";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
 import { useHazardOverlay } from "@/hooks/useHazardOverlay";
 
@@ -11,6 +12,8 @@ const Index = () => {
   const [zoom, setZoom] = useState(2);
   const [coordinates, setCoordinates] = useState({ lng: 0, lat: 20 });
   const [mapInstance, setMapInstance] = useState<maptilersdk.Map | null>(null);
+
+  const apiBase = (import.meta as any).env?.VITE_API_BASE_URL as string | undefined;
 
   const weather = useWeatherLayers(mapInstance);
   useHazardOverlay(mapInstance);
@@ -26,6 +29,7 @@ const Index = () => {
         onCenterChange={(lng, lat) => setCoordinates({ lng, lat })}
         onMapReady={handleMapReady}
       />
+      <AnomalyLayer map={mapInstance} apiBaseUrl={apiBase} />
       <BackendStatusBadge />
       <MapControls zoom={zoom} coordinates={coordinates} />
       {weather.ready && (
