@@ -78,6 +78,7 @@ const WeatherControls = ({
             </button>
             <input
               type="range"
+              aria-label="Timeline"
               min={sliderMin}
               max={sliderMax}
               value={sliderValue}

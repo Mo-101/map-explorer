@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -12,8 +12,9 @@ import httpx
 from psycopg_pool import ConnectionPool
 from dotenv import load_dotenv
 
-# Load env for local dev; production should provide real env vars
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env.local"))
+# Load env for local dev only; Azure App Service should provide env vars via App Settings.
+if os.getenv("WEBSITE_SITE_NAME") is None:
+    load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env.local"))
 
 app = FastAPI(title="AfriGuard Model Service")
 
@@ -25,6 +26,93 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+def _db_init_enabled() -> bool:
+    v = (os.getenv("AUTO_INIT_DB") or "").strip().lower()
+    return v in {"1", "true", "yes", "on"}
+
+
+def _init_db_schema_and_seed():
+    if not pool:
+        return
+
+    pool.open()
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS hazard_alerts (
+                  id BIGSERIAL PRIMARY KEY,
+                  external_id TEXT,
+                  source TEXT NOT NULL DEFAULT 'manual',
+                  type TEXT NOT NULL,
+                  severity TEXT,
+                  title TEXT,
+                  description TEXT,
+                  lat DOUBLE PRECISION,
+                  lng DOUBLE PRECISION,
+                  event_at TIMESTAMPTZ,
+                  intensity DOUBLE PRECISION,
+                  metadata JSONB,
+                  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                  UNIQUE (source, external_id)
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_hazard_alerts_active ON hazard_alerts (is_active);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_hazard_alerts_event_at ON hazard_alerts (event_at DESC);")
+
+            cur.execute("SELECT COUNT(*) FROM hazard_alerts WHERE is_active = TRUE;")
+            active_count = int(cur.fetchone()[0] or 0)
+
+            if active_count == 0:
+                cur.execute(
+                    """
+                    INSERT INTO hazard_alerts (
+                      external_id, source, type, severity, title, description,
+                      lat, lng, event_at, intensity, metadata, is_active
+                    ) VALUES
+                      (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s, %s::jsonb, TRUE),
+                      (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s, %s::jsonb, TRUE)
+                    ON CONFLICT (source, external_id) DO UPDATE
+                    SET updated_at = NOW(), is_active = TRUE;
+                    """,
+                    (
+                        "seed-cyclone-001",
+                        "seed",
+                        "cyclone",
+                        "high",
+                        "Seed Cyclone",
+                        "Test cyclone for map rendering",
+                        -18.6,
+                        45.1,
+                        80,
+                        json.dumps({"confidence": 0.8, "lead_time_days": 2, "wind_speed": 95, "min_pressure_hpa": 975}),
+                        "seed-cholera-001",
+                        "seed",
+                        "cholera",
+                        "moderate",
+                        "Seed Cholera",
+                        "Test outbreak for convergence testing",
+                        -18.9,
+                        47.5,
+                        None,
+                        json.dumps({"confidence": 0.7, "lead_time_days": 1, "cases": 156, "deaths": 22}),
+                    ),
+                )
+
+
+@app.on_event("startup")
+def _on_startup():
+    if not _db_init_enabled():
+        return
+    try:
+        _init_db_schema_and_seed()
+    except Exception:
+        return
+
 class InferenceRequest(BaseModel):
     region: str
     fields: List[str]
@@ -33,6 +121,18 @@ class InferenceRequest(BaseModel):
 
 class AiAnalyzeRequest(BaseModel):
     prompt: str
+
+
+_pushed_threats_cache: dict | None = None
+
+
+def _require_ingest_key(request: Request):
+    expected = os.getenv("AFRO_STORM_API_KEY")
+    if not expected:
+        raise HTTPException(status_code=503, detail="AFRO_STORM_API_KEY is not configured")
+    key = request.headers.get("X-API-Key")
+    if key != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -76,6 +176,8 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 def _get_database_url() -> str:
     candidates = [
+        os.getenv("NEON_DATABASE_URL"),
+        os.getenv("VITE_NEON_DATABASE_URL"),
         os.getenv("DATABASE_URL"),
         os.getenv("PGDATABASE_URL"),
         os.getenv("PGDATABASE"),
@@ -87,15 +189,29 @@ def _get_database_url() -> str:
     raise RuntimeError("DATABASE_URL/PGDATABASE_URL is not configured")
 
 
+def _db_host_from_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        return parsed.hostname
+    except Exception:
+        return None
+
+
 # Minimal connection pool; keeps queries warm and avoids reconnect storms
 try:
+    _connect_timeout = float(os.getenv("DB_CONNECT_TIMEOUT_SEC") or 8)
+    _pool_timeout = float(os.getenv("DB_POOL_TIMEOUT_SEC") or 8)
     pool = ConnectionPool(
         conninfo=_get_database_url(),
         min_size=0,
         max_size=5,
-        timeout=5,
+        timeout=_pool_timeout,
         open=False,
-        kwargs={"connect_timeout": 3},
+        kwargs={"connect_timeout": _connect_timeout},
     )
 except Exception as exc:
     pool = None
@@ -115,14 +231,25 @@ def health():
     else:
         try:
             pool.open()
-            with pool.connection(timeout=2) as conn:
+            with pool.connection(timeout=float(os.getenv("DB_POOL_TIMEOUT_SEC") or 8)) as conn:
                 with conn.cursor() as cur:
                     cur.execute("SELECT 1;")
         except Exception as exc:  # pragma: no cover - defensive
             status = "degraded"
             db_state = f"error: {exc}"
 
-    return {"status": status, "engine": "GraphCast-V3-Core", "db": db_state}
+    db_host = None
+    try:
+        db_host = _db_host_from_url(os.getenv("DATABASE_URL") or os.getenv("PGDATABASE_URL") or os.getenv("VITE_PGDATABASE_URL"))
+    except Exception:
+        db_host = None
+
+    return {
+        "status": status,
+        "engine": "GraphCast-V3-Core",
+        "db": db_state,
+        "db_host": db_host,
+    }
 
 
 @app.get("/api/v1/health")
@@ -164,7 +291,7 @@ def get_threats(limit: int = 100):
                 )
                 rows = cur.fetchall()
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"DB query failed: {exc}")
+        raise HTTPException(status_code=503, detail=f"DB query failed: {exc}")
 
     threats = []
     for row in rows:
@@ -341,6 +468,255 @@ def get_threats(limit: int = 100):
         "sources": sorted({t["detection_details"]["source"] for t in all_threats if t.get("detection_details", {}).get("source")}),
         "model_version": os.getenv("MODEL_VERSION") or "live",
     }
+
+
+@app.get("/api/v1/afro-storm/threats")
+def get_threats_alias(limit: int = 100):
+    """Compatibility endpoint replacing legacy Next.js route handler."""
+    return get_threats(limit=limit)
+
+
+@app.post("/api/v1/afro-storm/threats")
+async def push_threats_alias(request: Request):
+    """Optional ingest endpoint (compatibility). Stores last payload in-memory.
+
+    If you want this to persist to Postgres, we can add an upsert into hazard_alerts,
+    but keeping it in-memory is the safest default until schema is finalized.
+    """
+    _require_ingest_key(request)
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    global _pushed_threats_cache
+    _pushed_threats_cache = {
+        "received_at": _utc_now_iso(),
+        "payload": body,
+    }
+    return {"success": True, "received_at": _pushed_threats_cache["received_at"]}
+
+
+@app.get("/api/v1/pipeline/status")
+def pipeline_status():
+    """Replacement for legacy Next.js pipeline/status handler.
+
+    Best-effort: if ingestion tables exist, return recent records. Otherwise,
+    return an empty payload with a clear status.
+    """
+    if not pool:
+        return {
+            "timestamp": _utc_now_iso(),
+            "status": "unavailable",
+            "watermarks": [],
+            "recent_logs": [],
+            "detail": f"Database not ready: {pool_error}",
+        }
+
+    try:
+        pool.open()
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM source_watermarks")
+                watermarks = cur.fetchall()
+                cur.execute(
+                    """
+                    SELECT source, status, records_synced, latency_ms, created_at
+                    FROM ingestion_logs
+                    ORDER BY created_at DESC
+                    LIMIT 20
+                    """
+                )
+                logs = cur.fetchall()
+        return {
+            "timestamp": _utc_now_iso(),
+            "status": "ok",
+            "watermarks": watermarks,
+            "recent_logs": logs,
+        }
+    except Exception as exc:
+        return {
+            "timestamp": _utc_now_iso(),
+            "status": "not_configured",
+            "watermarks": [],
+            "recent_logs": [],
+            "detail": str(exc),
+        }
+
+
+@app.get("/api/v1/forecast/runs")
+def list_forecast_runs(limit: int = 20):
+    if not pool:
+        return {
+            "timestamp": _utc_now_iso(),
+            "status": "unavailable",
+            "runs": [],
+            "detail": f"Database not ready: {pool_error}",
+        }
+
+    limit = max(1, min(200, int(limit)))
+
+    try:
+        pool.open()
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, source, model, model_version, run_label,
+                           init_time, horizon_hours, step_hours,
+                           region_bbox, grid_spec, input_provenance, artifact_uris,
+                           status, detail, created_at
+                    FROM forecast_runs
+                    ORDER BY init_time DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+                rows = cur.fetchall()
+
+        runs = []
+        for r in rows:
+            (
+                run_id,
+                source,
+                model,
+                model_version,
+                run_label,
+                init_time,
+                horizon_hours,
+                step_hours,
+                region_bbox,
+                grid_spec,
+                input_provenance,
+                artifact_uris,
+                status,
+                detail,
+                created_at,
+            ) = r
+
+            runs.append(
+                {
+                    "id": run_id,
+                    "source": source,
+                    "model": model,
+                    "model_version": model_version,
+                    "run_label": run_label,
+                    "init_time": init_time.isoformat() if init_time else None,
+                    "horizon_hours": horizon_hours,
+                    "step_hours": step_hours,
+                    "region_bbox": region_bbox,
+                    "grid_spec": grid_spec,
+                    "input_provenance": input_provenance,
+                    "artifact_uris": artifact_uris,
+                    "status": status,
+                    "detail": detail,
+                    "created_at": created_at.isoformat() if created_at else None,
+                }
+            )
+
+        return {
+            "timestamp": _utc_now_iso(),
+            "status": "ok",
+            "runs": runs,
+            "count": len(runs),
+        }
+    except Exception as exc:
+        return {
+            "timestamp": _utc_now_iso(),
+            "status": "not_configured",
+            "runs": [],
+            "count": 0,
+            "detail": str(exc),
+        }
+
+
+@app.get("/api/v1/forecast/fields")
+def list_forecast_fields(run_id: int, field: Optional[str] = None, limit: int = 200):
+    if not pool:
+        return {
+            "timestamp": _utc_now_iso(),
+            "status": "unavailable",
+            "fields": [],
+            "detail": f"Database not ready: {pool_error}",
+        }
+
+    limit = max(1, min(2000, int(limit)))
+
+    try:
+        pool.open()
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                if field:
+                    cur.execute(
+                        """
+                        SELECT id, run_id, field, level, valid_time,
+                               uri, content_type, geojson, metadata, created_at
+                        FROM forecast_fields
+                        WHERE run_id = %s AND field = %s
+                        ORDER BY valid_time ASC
+                        LIMIT %s
+                        """,
+                        (run_id, field, limit),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT id, run_id, field, level, valid_time,
+                               uri, content_type, geojson, metadata, created_at
+                        FROM forecast_fields
+                        WHERE run_id = %s
+                        ORDER BY valid_time ASC
+                        LIMIT %s
+                        """,
+                        (run_id, limit),
+                    )
+                rows = cur.fetchall()
+
+        out = []
+        for r in rows:
+            (
+                row_id,
+                rid,
+                f,
+                level,
+                valid_time,
+                uri,
+                content_type,
+                geojson,
+                metadata,
+                created_at,
+            ) = r
+
+            out.append(
+                {
+                    "id": row_id,
+                    "run_id": rid,
+                    "field": f,
+                    "level": level,
+                    "valid_time": valid_time.isoformat() if valid_time else None,
+                    "uri": uri,
+                    "content_type": content_type,
+                    "geojson": geojson,
+                    "metadata": metadata,
+                    "created_at": created_at.isoformat() if created_at else None,
+                }
+            )
+
+        return {
+            "timestamp": _utc_now_iso(),
+            "status": "ok",
+            "fields": out,
+            "count": len(out),
+        }
+    except Exception as exc:
+        return {
+            "timestamp": _utc_now_iso(),
+            "status": "not_configured",
+            "fields": [],
+            "count": 0,
+            "detail": str(exc),
+        }
 
 
 @app.post("/infer")

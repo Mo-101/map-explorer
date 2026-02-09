@@ -3,6 +3,7 @@ import type * as maptilersdk from "@maptiler/sdk";
 import MapView from "@/components/MapView";
 import MapControls from "@/components/MapControls";
 import WeatherControls from "@/components/WeatherControls";
+import BackendStatusBadge from "@/components/BackendStatusBadge";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
 import { useHazardOverlay } from "@/hooks/useHazardOverlay";
 
@@ -25,6 +26,7 @@ const Index = () => {
         onCenterChange={(lng, lat) => setCoordinates({ lng, lat })}
         onMapReady={handleMapReady}
       />
+      <BackendStatusBadge />
       <MapControls zoom={zoom} coordinates={coordinates} />
       {weather.ready && (
         <WeatherControls
