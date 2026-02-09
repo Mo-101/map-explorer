@@ -204,6 +204,12 @@ class InferenceRequest(BaseModel):
 
 class AiAnalyzeRequest(BaseModel):
     prompt: str
+    context: Optional[str] = None
+
+
+class ClaudeAnalyzeRequest(BaseModel):
+    prompt: str
+    model: Optional[str] = None
 
 
 _pushed_threats_cache: dict | None = None
@@ -967,22 +973,24 @@ def run_inference_v1(req: InferenceRequest):
 
 @app.post("/api/v1/ai/analyze")
 def ai_analyze(req: AiAnalyzeRequest):
-    """Analyze query using MoStar AI Multi-Model Mesh (Azure + Gemini)"""
+    """Analyze query using MoStar AI Multi-Model Mesh (Azure + Gemini + Claude)"""
     if MOSCRIPTS_AVAILABLE:
         # Use MoScripts for multi-model AI analysis with voice lines
         try:
             result = analyze_with_mostar(req.prompt, req.context or "")
-            
+
             return {
                 "response": result['synthesis'],
                 "azure_analysis": result['azure_analysis'],
                 "gemini_analysis": result['gemini_analysis'],
+                "claude_analysis": result.get('claude_analysis', ''),
                 "combined_confidence": result['combined_confidence'],
                 "models_used": result['models_used'],
+                "safety_flags": result.get('safety_flags', []),
                 "processing_time": result['processing_time'],
                 "mesh_status": result['mesh_status'],
                 "moscripts_enabled": True,
-                "intelligence_system": "MoStar AI Multi-Model Mesh v1.0",
+                "intelligence_system": "MoStar AI Multi-Model Mesh v2.0 (Azure + Gemini + Claude)",
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
         except Exception as e:
@@ -990,10 +998,50 @@ def ai_analyze(req: AiAnalyzeRequest):
     else:
         # Fallback to mock response
         return {
-            "response": f"AI analysis for: {req.prompt}\n\nNote: MoStar AI Multi-Model Mesh is not available. Please configure Azure OpenAI and Gemini API keys.",
+            "response": f"AI analysis for: {req.prompt}\n\nNote: MoStar AI Multi-Model Mesh is not available. Please configure Azure OpenAI, Gemini, and Anthropic API keys.",
             "model": "mock-response",
             "moscripts_enabled": False,
             "intelligence_system": "Legacy AI Mock",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+
+@app.post("/api/v1/ai/claude/analyze")
+def claude_analyze(req: ClaudeAnalyzeRequest):
+    """Dedicated Claude analysis endpoint for strategic reasoning and safety assessment"""
+    if MOSCRIPTS_AVAILABLE:
+        try:
+            from moscripts.mo_mostar_ai import MoClaudeSpirit
+            claude = MoClaudeSpirit()
+            result = claude.execute({
+                'query': req.prompt,
+                'context': ''
+            })
+
+            if result is None:
+                raise HTTPException(status_code=500, detail="Claude analysis returned no result")
+
+            return {
+                "response": result.get('analysis', ''),
+                "analysis": result.get('analysis', ''),
+                "confidence": result.get('confidence', 0),
+                "model": result.get('model', 'claude-sonnet'),
+                "safety_flags": result.get('safety_flags', []),
+                "processing_time": result.get('processing_time', 0),
+                "provider": "Anthropic Claude",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        except ImportError:
+            raise HTTPException(status_code=501, detail="Claude MoScript module not available")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Claude analysis failed: {str(e)}")
+    else:
+        return {
+            "response": f"Claude analysis for: {req.prompt}\n\nNote: Claude integration requires the anthropic Python package and ANTHROPIC_API_KEY.",
+            "model": "mock-response",
+            "provider": "Anthropic Claude (mock)",
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
