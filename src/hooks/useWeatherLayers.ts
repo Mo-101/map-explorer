@@ -8,9 +8,11 @@ import {
   RadarLayer,
   ColorRamp,
 } from "@maptiler/weather";
+import { WindArrowLayer } from "@/lib/windArrows";
 
 export type WeatherLayerType =
   | "wind"
+  | "wind-arrows"
   | "precipitation"
   | "pressure"
   | "radar"
@@ -29,6 +31,7 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
     radar: { layer: null, value: "value", units: " dBZ" },
     temperature: { layer: null, value: "value", units: " °C" },
     wind: { layer: null, value: "speedMetersPerSecond", units: " m/s" },
+    "wind-arrows": { layer: null, value: "speedMetersPerSecond", units: " m/s" },
   });
 
   const [activeLayer, setActiveLayer] = useState<WeatherLayerType>("wind");
@@ -80,24 +83,19 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
           id: "precipitation",
           opacity: 0.9,
           smooth: true,
-          colorramp:
-            // vivid, wide range ramp
-            // @ts-ignore MapTiler SDK ships this ramp in latest versions
-            (ColorRamp.builtin as any).PRECIPITATION_V2 || ColorRamp.builtin.PRECIPITATION,
+          colorramp: ColorRamp.builtin.PRECIPITATION,
         });
         break;
       case "pressure":
         weatherLayer = new PressureLayer({
           id: "pressure",
-          opacity: 0.9,
-          smooth: true,
-          colorramp: ColorRamp.builtin.MAKO.scale(900, 1080),
+          opacity: 0.8,
         });
         break;
       case "radar":
         weatherLayer = new RadarLayer({
           id: "radar",
-          opacity: 0.85,
+          opacity: 0.8,
           smooth: true,
           colorramp: ColorRamp.builtin.RADAR_CLOUD,
         });
@@ -115,9 +113,14 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
           id: "wind",
           opacity: 0.9,
           colorramp: ColorRamp.builtin.VIRIDIS.scale(0, 40),
-          particleFadeOpacity: 0.7,
-          particleMultiplier: 1.35,
-          particleSpeed: 0.75,
+        });
+        break;
+      case "wind-arrows":
+        // Create wind arrows using custom implementation
+        weatherLayer = new WindArrowLayer({
+          id: "wind-arrows",
+          opacity: 0.8,
+          colorramp: ColorRamp.builtin.VIRIDIS.scale(0, 40),
         });
         break;
     }
@@ -142,8 +145,12 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
         setSliderMax(+endDate);
         setSliderValue(+currentDate);
       }
-      // Auto-play as soon as data is ready
-      weatherLayer.animateByFactor(PLAY_SPEED);
+      // Auto-play as soon as data is ready with appropriate speed
+      let animationSpeed = PLAY_SPEED;
+      if (type === "radar" || type === "pressure") {
+        animationSpeed = 3600; // 1x speed for radar and pressure
+      }
+      weatherLayer.animateByFactor(animationSpeed);
       setIsPlaying(true);
       refreshTime();
     });
@@ -161,7 +168,12 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
         const prevLayer = weatherLayers.current[prev]?.layer;
         if (prevLayer) {
           currentTimeRef.current = prevLayer.getAnimationTime();
-          map.setLayoutProperty(prev, "visibility", "none");
+          // Handle different layer types
+          if (prev === "wind-arrows") {
+            prevLayer.setVisibility(false);
+          } else {
+            map.setLayoutProperty(prev, "visibility", "none");
+          }
         }
       }
     }
@@ -171,12 +183,28 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
 
     const weatherLayer = weatherLayers.current[type].layer || createWeatherLayer(type);
 
-    if (map.getLayer(type)) {
-      map.setLayoutProperty(type, "visibility", "visible");
+    if (type === "wind-arrows") {
+      // Handle custom WindArrowLayer
+      if (!(weatherLayer as any).isAdded) {
+        (weatherLayer as WindArrowLayer).addTo(map, "Water");
+        (weatherLayer as any).isAdded = true;
+      } else {
+        (weatherLayer as WindArrowLayer).setVisibility(true);
+      }
     } else {
-      map.addLayer(weatherLayer, "Water");
+      // Handle standard MapTiler weather layers
+      if (map.getLayer(type)) {
+        map.setLayoutProperty(type, "visibility", "visible");
+      } else {
+        map.addLayer(weatherLayer, "Water");
+      }
+      // Set animation speed based on layer type
+      let animationSpeed = PLAY_SPEED;
+      if (type === "radar" || type === "pressure") {
+        animationSpeed = 3600; // 1x speed for radar and pressure
+      }
+      weatherLayer.animateByFactor(animationSpeed);
     }
-    weatherLayer.animateByFactor(PLAY_SPEED);
     setIsPlaying(true);
   }, [map, createWeatherLayer]);
 
@@ -187,7 +215,13 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
       wl.animateByFactor(0);
       setIsPlaying(false);
     } else {
-      wl.animateByFactor(3600);
+      // Use appropriate animation speed for different layers
+      const currentType = activeLayerRef.current;
+      let animationSpeed = 3600;
+      if (currentType === "radar" || currentType === "pressure") {
+        animationSpeed = 3600; // 1x speed for radar and pressure
+      }
+      wl.animateByFactor(animationSpeed);
       setIsPlaying(true);
     }
   }, [isPlaying]);
@@ -206,10 +240,12 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
 
     const onLoad = () => {
       try {
+        // Set water color as in the example
         map.setPaintProperty("Water", "fill-color", "rgba(0, 0, 0, 0.4)");
       } catch {
         // Water layer may not exist
       }
+      // Start with wind layer by default
       changeWeatherLayer("wind");
       setReady(true);
     };
@@ -225,6 +261,7 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
     };
 
     const onMouseOut = (e: any) => {
+      // Clear pointer value when mouse leaves the map
       if (!e.originalEvent.relatedTarget) {
         setPointerValue("");
         pointerLngLatRef.current = null;

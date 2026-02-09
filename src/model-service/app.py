@@ -11,12 +11,40 @@ import time
 import httpx
 from psycopg_pool import ConnectionPool
 from dotenv import load_dotenv
+import asyncio
+from contextlib import asynccontextmanager
 
 # Load env for local dev only; Azure App Service should provide env vars via App Settings.
 if os.getenv("WEBSITE_SITE_NAME") is None:
     load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env.local"))
 
-app = FastAPI(title="AfriGuard Model Service")
+# Global background task for GraphCast ingestion
+_graphcast_task: Optional[asyncio.Task] = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan including background tasks."""
+    # Startup
+    global _graphcast_task
+    if os.getenv("GRAPHCAST_INGESTION_ENABLED", "").lower() in {"1", "true", "yes"}:
+        try:
+            from .graphcast_ingestion import start_graphcast_ingestion
+            _graphcast_task = asyncio.create_task(start_graphcast_ingestion(pool))
+            print("GraphCast ingestion started")
+        except Exception as e:
+            print(f"Failed to start GraphCast ingestion: {e}")
+    
+    yield
+    
+    # Shutdown
+    if _graphcast_task:
+        _graphcast_task.cancel()
+        try:
+            await _graphcast_task
+        except asyncio.CancelledError:
+            pass
+
+app = FastAPI(title="AfriGuard Model Service", lifespan=lifespan)
 
 # Allow local dev clients (Next/Vite) to call this service without CORS issues
 app.add_middleware(
@@ -63,6 +91,44 @@ def _init_db_schema_and_seed():
             )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_hazard_alerts_active ON hazard_alerts (is_active);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_hazard_alerts_event_at ON hazard_alerts (event_at DESC);")
+
+            # Create forecast_runs table
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS forecast_runs (
+                  run_id TEXT PRIMARY KEY,
+                  source TEXT NOT NULL,
+                  model_name TEXT NOT NULL,
+                  version TEXT,
+                  status TEXT NOT NULL DEFAULT 'pending',
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                  completed_at TIMESTAMPTZ,
+                  metadata JSONB
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_forecast_runs_source ON forecast_runs (source);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_forecast_runs_created_at ON forecast_runs (created_at DESC);")
+
+            # Create forecast_fields table
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS forecast_fields (
+                  id BIGSERIAL PRIMARY KEY,
+                  run_id TEXT NOT NULL REFERENCES forecast_runs(run_id) ON DELETE CASCADE,
+                  field_name TEXT NOT NULL,
+                  variable TEXT NOT NULL,
+                  units TEXT,
+                  storage_type TEXT NOT NULL DEFAULT 'uri',
+                  storage_uri TEXT,
+                  storage_geojson JSONB,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                  metadata JSONB
+                );
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_forecast_fields_run_id ON forecast_fields (run_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_forecast_fields_variable ON forecast_fields (variable);")
 
             cur.execute("SELECT COUNT(*) FROM hazard_alerts WHERE is_active = TRUE;")
             active_count = int(cur.fetchone()[0] or 0)
@@ -240,7 +306,7 @@ def health():
 
     db_host = None
     try:
-        db_host = _db_host_from_url(os.getenv("DATABASE_URL") or os.getenv("PGDATABASE_URL") or os.getenv("VITE_PGDATABASE_URL"))
+        db_host = _db_host_from_url(_get_database_url())
     except Exception:
         db_host = None
 
@@ -249,6 +315,29 @@ def health():
         "engine": "GraphCast-V3-Core",
         "db": db_state,
         "db_host": db_host,
+    }
+
+
+@app.get("/api/v1/debug/db")
+def debug_database():
+    """Debug endpoint to check database URL selection."""
+    # Debug database URL selection
+    candidates = [
+        ("NEON_DATABASE_URL", os.getenv("NEON_DATABASE_URL")),
+        ("VITE_NEON_DATABASE_URL", os.getenv("VITE_NEON_DATABASE_URL")),
+        ("DATABASE_URL", os.getenv("DATABASE_URL")),
+        ("PGDATABASE_URL", os.getenv("PGDATABASE_URL")),
+        ("PGDATABASE", os.getenv("PGDATABASE")),
+        ("VITE_PGDATABASE_URL", os.getenv("VITE_PGDATABASE_URL")),
+    ]
+    
+    selected_url = _get_database_url()
+    selected_host = _db_host_from_url(selected_url)
+    
+    return {
+        "candidates": candidates,
+        "selected_url": selected_url,
+        "selected_host": selected_host
     }
 
 
@@ -716,6 +805,109 @@ def list_forecast_fields(run_id: int, field: Optional[str] = None, limit: int = 
             "fields": [],
             "count": 0,
             "detail": str(exc),
+        }
+
+
+# GraphCast Ingestion Control Endpoints
+@app.get("/api/v1/graphcast/status")
+def graphcast_status():
+    """Get GraphCast ingestion service status."""
+    global _graphcast_task
+    
+    status = {
+        "enabled": os.getenv("GRAPHCAST_INGESTION_ENABLED", "").lower() in {"1", "true", "yes"},
+        "task_running": _graphcast_task is not None and not _graphcast_task.done(),
+        "interval_minutes": int(os.getenv("GRAPHCAST_INGESTION_INTERVAL_MIN", "30")),
+        "max_retries": int(os.getenv("GRAPHCAST_MAX_RETRIES", "3")),
+        "retry_delay_seconds": int(os.getenv("GRAPHCAST_RETRY_DELAY_SEC", "60"))
+    }
+    
+    if _graphcast_task and _graphcast_task.done():
+        try:
+            _graphcast_task.result()
+        except Exception as e:
+            status["error"] = str(e)
+    
+    return status
+
+
+@app.post("/api/v1/graphcast/ingest")
+async def trigger_graphcast_ingestion():
+    """Manually trigger a GraphCast ingestion run."""
+    if not pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        from .graphcast_ingestion import get_graphcast_ingestor
+        ingestor = get_graphcast_ingestor(pool)
+        
+        # Run ingestion in background
+        task = asyncio.create_task(ingestor.ingest_forecast_run())
+        
+        return {
+            "status": "triggered",
+            "message": "GraphCast ingestion started",
+            "task_id": id(task)
+        }
+    except ImportError as e:
+        raise HTTPException(status_code=501, detail=f"GraphCast ingestion module not available: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to trigger ingestion: {e}")
+
+
+@app.get("/api/v1/graphcast/runs")
+def list_graphcast_runs(limit: int = 20):
+    """List recent GraphCast forecast runs."""
+    if not pool:
+        return {
+            "timestamp": _utc_now_iso(),
+            "status": "no_database",
+            "runs": [],
+            "count": 0,
+        }
+    
+    try:
+        pool.open()
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT run_id, source, model_name, version, status,
+                           created_at, completed_at, metadata
+                    FROM forecast_runs 
+                    WHERE source = 'graphcast'
+                    ORDER BY created_at DESC 
+                    LIMIT %s
+                """, (limit,))
+                
+                rows = cur.fetchall()
+                
+                runs = []
+                for row in rows:
+                    runs.append({
+                        "run_id": row[0],
+                        "source": row[1],
+                        "model_name": row[2],
+                        "version": row[3],
+                        "status": row[4],
+                        "created_at": row[5].isoformat() if row[5] else None,
+                        "completed_at": row[6].isoformat() if row[6] else None,
+                        "metadata": row[7]
+                    })
+                
+                return {
+                    "timestamp": _utc_now_iso(),
+                    "status": "success",
+                    "runs": runs,
+                    "count": len(runs)
+                }
+                
+    except Exception as exc:
+        return {
+            "timestamp": _utc_now_iso(),
+            "status": "error",
+            "runs": [],
+            "count": 0,
+            "detail": str(exc)
         }
 
 

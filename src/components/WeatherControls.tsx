@@ -3,6 +3,7 @@ import type { WeatherLayerType } from "@/hooks/useWeatherLayers";
 
 const LAYER_OPTIONS: { id: WeatherLayerType; label: string }[] = [
   { id: "wind", label: "Wind" },
+  { id: "wind-arrows", label: "Wind Arrows" },
   { id: "precipitation", label: "Precipitation" },
   { id: "pressure", label: "Pressure" },
   { id: "radar", label: "Radar" },
@@ -39,7 +40,7 @@ const WeatherControls = ({
       {/* Top-left: active layer name + pointer data */}
       <div className="absolute top-16 left-5 z-10 flex flex-col gap-1">
         <span className="text-sm font-medium text-foreground/90 capitalize drop-shadow-lg">
-          {activeLayer}
+          {activeLayer === "wind-arrows" ? "Wind Arrows" : activeLayer}
         </span>
         {pointerValue && (
           <span className="text-xl font-black text-foreground drop-shadow-lg">
