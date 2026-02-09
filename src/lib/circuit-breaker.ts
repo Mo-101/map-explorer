@@ -44,4 +44,3 @@ export class CircuitBreaker {
 }
 
 export const azureBreaker = new CircuitBreaker('azure');
-export const azureBreaker = new CircuitBreaker('azure');

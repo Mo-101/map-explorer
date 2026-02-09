@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { redis } from '@/lib/redis';
-import { azureBreaker, azureBreaker } from '@/lib/circuit-breaker';
+import { azureBreaker } from '@/lib/circuit-breaker';
 
 export async function GET() {
   const health = {
@@ -13,7 +13,6 @@ export async function GET() {
       model_service: 'UNKNOWN'
     },
     circuit_breakers: {
-      azure: 'CLOSED',
       azure: 'CLOSED'
     }
   };
@@ -44,7 +43,6 @@ export async function GET() {
   }
 
   // Reflect breaker states from Redis
-  health.circuit_breakers.azure = (await azureBreaker.isOpen()) ? 'OPEN' : 'CLOSED';
   health.circuit_breakers.azure = (await azureBreaker.isOpen()) ? 'OPEN' : 'CLOSED';
 
   return NextResponse.json(health, { status: health.status === 'UP' ? 200 : 503 });
