@@ -18,17 +18,32 @@ from datetime import datetime
 # Import the base MoScript class
 from moscripts.moscript_base import MoScript
 
-# Import detection algorithms
+# Import detection algorithms (try multiple import paths)
 try:
     from weather_anomaly_detection import (
         CycloneDetector,
-        FloodDetector, 
+        FloodDetector,
         LandslideDetector,
         WeatherAnomalyDetector
     )
+    print("✅ Weather anomaly detection modules loaded")
 except ImportError:
-    print("⚠️ Weather anomaly detection modules not found - using mock data")
-    CycloneDetector = FloodDetector = LandslideDetector = WeatherAnomalyDetector = None
+    try:
+        import sys, os
+        # Add parent directory to path for model-service level imports
+        _parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if _parent not in sys.path:
+            sys.path.insert(0, _parent)
+        from weather_anomaly_detection import (
+            CycloneDetector,
+            FloodDetector,
+            LandslideDetector,
+            WeatherAnomalyDetector
+        )
+        print("✅ Weather anomaly detection modules loaded (via path fix)")
+    except ImportError as e:
+        print(f"⚠️ Weather anomaly detection modules not found - using mock data: {e}")
+        CycloneDetector = FloodDetector = LandslideDetector = WeatherAnomalyDetector = None
 
 
 class MoGraphCastDetector(MoScript):

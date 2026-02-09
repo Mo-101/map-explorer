@@ -6,7 +6,7 @@ Event-driven intelligence modules for AFRO STORM backend with personality and sa
 
 Available MoScripts:
 - mo_graphcast_detector: Weather anomaly detection with GraphCast
-- mo_mostar_ai: Multi-Model AI (Azure + Gemini) with Mesh synthesis
+- mo_mostar_ai: Multi-Model AI (Azure + Gemini + Claude) with Mesh synthesis
 
 Usage:
     from moscripts.mo_graphcast_detector import detect_weather_anomalies
@@ -32,6 +32,7 @@ from moscripts.mo_mostar_ai import (
     mostar_ai,
     MoAzureSoul,
     MoGeminiMind,
+    MoClaudeSpirit,
     MoMeshSynthesizer
 )
 
@@ -52,6 +53,7 @@ __all__ = [
     'mostar_ai',
     'MoAzureSoul',
     'MoGeminiMind',
+    'MoClaudeSpirit',
     'MoMeshSynthesizer',
     
     # Base Classes

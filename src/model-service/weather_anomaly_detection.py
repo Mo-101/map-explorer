@@ -9,12 +9,36 @@ Built for MoStar Industries | Multi-Model Mesh Intelligence
 """
 
 import numpy as np
-import scipy.ndimage as ndimage
-from scipy.spatial.distance import cdist
-from geopy.distance import geodesic
 from typing import Dict, List, Tuple, Optional, Any
 from datetime import datetime, timedelta
 import math
+
+# Optional heavy dependencies - graceful fallback
+try:
+    import scipy.ndimage as ndimage
+    SCIPY_AVAILABLE = True
+except ImportError:
+    ndimage = None
+    SCIPY_AVAILABLE = False
+
+try:
+    from geopy.distance import geodesic as _geodesic
+    GEOPY_AVAILABLE = True
+except ImportError:
+    _geodesic = None
+    GEOPY_AVAILABLE = False
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Haversine fallback when geopy is not installed."""
+    r = 6371.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return r * c
 
 class WeatherAnomalyDetector:
     """
@@ -113,7 +137,7 @@ class WeatherAnomalyDetector:
                     'type': 'cyclone',
                     'intensity': intensity,
                     'center_lat': self._index_to_lat(lat_idx),
-                    'center_lon': self._index_to_lon(lon_idx),
+                    'center_lng': self._index_to_lon(lon_idx),
                     'max_wind_speed': float(center_wind_speed),
                     'min_pressure': float(center_pressure),
                     'vorticity': float(center_vorticity),
@@ -160,7 +184,7 @@ class WeatherAnomalyDetector:
                     'type': 'flood',
                     'severity': self._classify_flood_severity(risk_score),
                     'center_lat': self._index_to_lat(lat_idx),
-                    'center_lon': self._index_to_lon(lon_idx),
+                    'center_lng': self._index_to_lon(lon_idx),
                     'precipitation_mm_per_hour': float(precip_value * 24),
                     'risk_score': float(risk_score),
                     'affected_area_km2': self._estimate_flood_area(lat_idx, lon_idx, data),
@@ -206,7 +230,7 @@ class WeatherAnomalyDetector:
                     'type': 'landslide',
                     'severity': self._classify_landslide_severity(risk_score),
                     'center_lat': self._index_to_lat(lat_idx),
-                    'center_lon': self._index_to_lon(lon_idx),
+                    'center_lng': self._index_to_lon(lon_idx),
                     'trigger_rainfall_mm': float(precip_value * 24),
                     'risk_score': float(risk_score),
                     'slope_angle': self._estimate_slope_angle(lat_idx, lon_idx),  # Simplified
@@ -244,14 +268,14 @@ class WeatherAnomalyDetector:
             if len(group) >= 2:  # Convergence zone requires 2+ hazards
                 # Calculate convergence characteristics
                 center_lat = np.mean([h['center_lat'] for h in group])
-                center_lon = np.mean([h['center_lon'] for h in group])
+                center_lon = np.mean([h['center_lng'] for h in group])
                 
                 convergence = {
                     'id': f"convergence-{datetime.now().strftime('%Y%m%d%H%M')}",
                     'type': 'convergence',
                     'severity': self._calculate_convergence_severity(group),
                     'center_lat': float(center_lat),
-                    'center_lon': float(center_lon),
+                    'center_lng': float(center_lon),
                     'involved_hazards': [h['id'] for h in group],
                     'hazard_types': list(set([h['type'] for h in group])),
                     'interaction_radius_km': self._calculate_interaction_radius(group),
@@ -281,15 +305,33 @@ class WeatherAnomalyDetector:
     def _find_local_minima(self, array: np.ndarray, threshold: float) -> List[Tuple[int, int]]:
         """Find local minima below threshold."""
         minima = []
-        
-        # Use scipy's minimum filter to find local minima
-        local_min = ndimage.minimum_filter(array, size=3)
-        minima_mask = (array == local_min) & (array < threshold)
-        
-        minima_indices = np.where(minima_mask)
-        for i, j in zip(minima_indices[0], minima_indices[1]):
-            minima.append((i, j))
-        
+
+        if SCIPY_AVAILABLE and ndimage is not None:
+            local_min = ndimage.minimum_filter(array, size=3)
+            minima_mask = (array == local_min) & (array < threshold)
+            minima_indices = np.where(minima_mask)
+            for i, j in zip(minima_indices[0], minima_indices[1]):
+                minima.append((i, j))
+        else:
+            # Pure-numpy fallback: compare each cell with its neighbours
+            rows, cols = array.shape
+            for i in range(rows):
+                for j in range(cols):
+                    if array[i, j] >= threshold:
+                        continue
+                    is_min = True
+                    for di in (-1, 0, 1):
+                        for dj in (-1, 0, 1):
+                            ni, nj = i + di, j + dj
+                            if 0 <= ni < rows and 0 <= nj < cols and (di != 0 or dj != 0):
+                                if array[ni, nj] < array[i, j]:
+                                    is_min = False
+                                    break
+                        if not is_min:
+                            break
+                    if is_min:
+                        minima.append((i, j))
+
         return minima
 
     def _classify_cyclone_intensity(self, wind_speed: float, pressure: float) -> str:
@@ -436,8 +478,8 @@ class WeatherAnomalyDetector:
                     continue
                     
                 distance = self._calculate_distance(
-                    hazard1['center_lat'], hazard1['center_lon'],
-                    hazard2['center_lat'], hazard2['center_lon']
+                    hazard1['center_lat'], hazard1['center_lng'],
+                    hazard2['center_lat'], hazard2['center_lng']
                 )
                 
                 if distance <= radius_km:
@@ -450,7 +492,9 @@ class WeatherAnomalyDetector:
 
     def _calculate_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         """Calculate distance between two points in km."""
-        return geodesic((lat1, lon1), (lat2, lon2)).kilometers
+        if GEOPY_AVAILABLE and _geodesic is not None:
+            return _geodesic((lat1, lon1), (lat2, lon2)).kilometers
+        return _haversine_km(lat1, lon1, lat2, lon2)
 
     def _calculate_convergence_severity(self, hazards: List[Dict]) -> str:
         """Calculate convergence zone severity."""
@@ -546,10 +590,43 @@ class WeatherAnomalyDetector:
             
         return regions
 
+# ─── Convenience single-hazard detector classes ─────────────────────────────
+# These exist so that mo_graphcast_detector.py can import them individually.
+
+class CycloneDetector:
+    """Thin wrapper around WeatherAnomalyDetector for cyclone-only detection."""
+
+    def __init__(self):
+        self._detector = WeatherAnomalyDetector()
+
+    def detect(self, data: Dict[str, Any]) -> List[Dict]:
+        return self._detector.detect_cyclones(data)
+
+
+class FloodDetector:
+    """Thin wrapper around WeatherAnomalyDetector for flood-only detection."""
+
+    def __init__(self):
+        self._detector = WeatherAnomalyDetector()
+
+    def detect(self, data: Dict[str, Any]) -> List[Dict]:
+        return self._detector.detect_floods(data)
+
+
+class LandslideDetector:
+    """Thin wrapper around WeatherAnomalyDetector for landslide-only detection."""
+
+    def __init__(self):
+        self._detector = WeatherAnomalyDetector()
+
+    def detect(self, data: Dict[str, Any]) -> List[Dict]:
+        return self._detector.detect_landslides(data)
+
+
 # Example usage and testing
 if __name__ == "__main__":
     detector = WeatherAnomalyDetector()
-    
+
     # Example GraphCast data structure (simplified)
     sample_data = {
         'u_component_of_wind': [[10, 15, 20], [25, 30, 35], [40, 45, 50]],
@@ -558,7 +635,7 @@ if __name__ == "__main__":
         'total_precipitation': [[0.01, 0.05, 0.1], [0.15, 0.2, 0.25], [0.3, 0.35, 0.4]],
         'soil_moisture': [[0.6, 0.7, 0.8], [0.85, 0.9, 0.95], [0.9, 0.95, 1.0]]
     }
-    
+
     results = detector.detect_all_hazards(sample_data)
     print("Weather Anomaly Detection Results:")
     print(f"Cyclones: {len(results['cyclones'])}")

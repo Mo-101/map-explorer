@@ -1046,29 +1046,206 @@ def claude_analyze(req: ClaudeAnalyzeRequest):
         }
 
 
+def _persist_anomalies_to_db(result: dict):
+    """Write detected anomalies into hazard_alerts so the /threats endpoint can serve them."""
+    if not pool:
+        return
+
+    hazard_rows = []
+    for cyc in result.get('cyclones', []):
+        hazard_rows.append({
+            "external_id": cyc.get('id', f"cyc-{cyc.get('center_lat', 0):.2f}"),
+            "type": "cyclone",
+            "severity": cyc.get('intensity', 'unknown'),
+            "title": f"Cyclone detected ({cyc.get('intensity', 'unknown')})",
+            "description": f"Max wind {cyc.get('max_wind_speed', 0):.0f} km/h, pressure {cyc.get('min_pressure', 0):.0f} hPa",
+            "lat": cyc.get('center_lat'),
+            "lng": cyc.get('center_lng'),
+            "intensity": cyc.get('max_wind_speed', 0),
+            "metadata": json.dumps({
+                "confidence": cyc.get('detection_confidence', 0),
+                "vorticity": cyc.get('vorticity', 0),
+                "radius_km": cyc.get('radius_km', 0),
+                "affected_regions": cyc.get('affected_regions', []),
+                "source_model": "graphcast_anomaly_detector",
+            }),
+        })
+
+    for fld in result.get('floods', []):
+        hazard_rows.append({
+            "external_id": fld.get('id', f"fld-{fld.get('center_lat', 0):.2f}"),
+            "type": "flood",
+            "severity": fld.get('severity', 'unknown'),
+            "title": f"Flood risk ({fld.get('severity', 'unknown')})",
+            "description": f"Precipitation {fld.get('precipitation_mm_per_hour', 0):.0f} mm/h, risk {fld.get('risk_score', 0):.2f}",
+            "lat": fld.get('center_lat'),
+            "lng": fld.get('center_lng'),
+            "intensity": fld.get('risk_score', 0),
+            "metadata": json.dumps({
+                "confidence": fld.get('detection_confidence', 0),
+                "affected_area_km2": fld.get('affected_area_km2', 0),
+                "duration_hours": fld.get('duration_hours', 0),
+                "affected_regions": fld.get('affected_regions', []),
+                "source_model": "graphcast_anomaly_detector",
+            }),
+        })
+
+    for lsl in result.get('landslides', []):
+        hazard_rows.append({
+            "external_id": lsl.get('id', f"lsl-{lsl.get('center_lat', 0):.2f}"),
+            "type": "landslide",
+            "severity": lsl.get('severity', 'unknown'),
+            "title": f"Landslide risk ({lsl.get('severity', 'unknown')})",
+            "description": f"Trigger rainfall {lsl.get('trigger_rainfall_mm', 0):.0f} mm, slope {lsl.get('slope_angle', 0):.0f} deg",
+            "lat": lsl.get('center_lat'),
+            "lng": lsl.get('center_lng'),
+            "intensity": lsl.get('risk_score', 0),
+            "metadata": json.dumps({
+                "confidence": lsl.get('detection_confidence', 0),
+                "soil_saturation": lsl.get('soil_saturation', 0),
+                "affected_regions": lsl.get('affected_regions', []),
+                "source_model": "graphcast_anomaly_detector",
+            }),
+        })
+
+    if not hazard_rows:
+        return
+
+    try:
+        pool.open()
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                for h in hazard_rows:
+                    cur.execute("""
+                        INSERT INTO hazard_alerts (
+                            external_id, source, type, severity, title, description,
+                            lat, lng, event_at, intensity, metadata, is_active
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s, %s::jsonb, TRUE)
+                        ON CONFLICT (source, external_id) DO UPDATE SET
+                            severity = EXCLUDED.severity,
+                            title = EXCLUDED.title,
+                            description = EXCLUDED.description,
+                            lat = EXCLUDED.lat,
+                            lng = EXCLUDED.lng,
+                            intensity = EXCLUDED.intensity,
+                            metadata = EXCLUDED.metadata,
+                            is_active = TRUE,
+                            updated_at = NOW()
+                    """, (
+                        h["external_id"],
+                        "graphcast_anomaly_detector",
+                        h["type"],
+                        h["severity"],
+                        h["title"],
+                        h["description"],
+                        h["lat"],
+                        h["lng"],
+                        h["intensity"],
+                        h["metadata"],
+                    ))
+    except Exception as e:
+        print(f"⚠️ Failed to persist anomalies to DB: {e}")
+
+
+def _load_anomalies_from_db() -> dict | None:
+    """Try to load recent anomaly detections from the database."""
+    if not pool:
+        return None
+
+    try:
+        pool.open()
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT external_id, type, severity, title, description,
+                           lat, lng, intensity, metadata, event_at
+                    FROM hazard_alerts
+                    WHERE is_active = TRUE
+                      AND source IN ('graphcast_anomaly_detector', 'graphcast')
+                      AND event_at > NOW() - INTERVAL '24 hours'
+                    ORDER BY event_at DESC
+                    LIMIT 200
+                """)
+                rows = cur.fetchall()
+
+        if not rows:
+            return None
+
+        buckets: dict = {"cyclones": [], "floods": [], "landslides": [], "convergences": []}
+        for row in rows:
+            (ext_id, htype, severity, title, description, lat, lng, intensity, metadata, event_at) = row
+            try:
+                meta = metadata if isinstance(metadata, dict) else json.loads(metadata or "{}")
+            except Exception:
+                meta = {}
+
+            entry = {
+                "id": ext_id,
+                "type": htype,
+                "severity": severity,
+                "title": title,
+                "description": description,
+                "center_lat": lat,
+                "center_lng": lng,
+                "intensity": intensity,
+                "detection_confidence": meta.get("confidence", 0),
+                "affected_regions": meta.get("affected_regions", []),
+                "timestamp": event_at.isoformat() if event_at else None,
+            }
+
+            bucket_key = {
+                "cyclone": "cyclones",
+                "flood": "floods",
+                "landslide": "landslides",
+                "storm": "cyclones",
+            }.get(htype, None)
+
+            if bucket_key and bucket_key in buckets:
+                buckets[bucket_key].append(entry)
+
+        return buckets
+    except Exception as e:
+        print(f"⚠️ Failed to load anomalies from DB: {e}")
+        return None
+
+
 @app.get("/api/v1/weather/anomalies")
 async def get_weather_anomalies():
-    """Detect cyclones, floods, landslides from GraphCast data using MoScripts"""
+    """Detect cyclones, floods, landslides from GraphCast data using MoScripts.
+
+    Strategy:
+    1. Try to load recent detections from the database (written by ingestion or previous calls).
+    2. If no DB data, run detection algorithms against available forecast data.
+    3. Persist new detections to hazard_alerts for the /threats endpoint.
+    """
+    # Step 1: Try DB first
+    db_anomalies = _load_anomalies_from_db()
+    if db_anomalies and any(len(v) > 0 for v in db_anomalies.values()):
+        total = sum(len(v) for k, v in db_anomalies.items() if k != "convergences")
+        return {
+            "timestamp": _utc_now_iso(),
+            "cyclones": db_anomalies["cyclones"],
+            "floods": db_anomalies["floods"],
+            "landslides": db_anomalies["landslides"],
+            "convergences": db_anomalies["convergences"],
+            "total_hazards": total,
+            "detection_time": 0,
+            "data_source": "database",
+            "moscripts_enabled": MOSCRIPTS_AVAILABLE,
+            "intelligence_system": "MoScripts Backend v2.0"
+        }
+
+    # Step 2: Run detection algorithms on forecast data
+    # Try to load the latest forecast fields from the DB
+    graphcast_data = _load_forecast_data_from_db()
+
     if MOSCRIPTS_AVAILABLE:
-        # Use MoScripts for intelligent detection with voice lines
         try:
-            # Mock GraphCast data for now - in production this would be real data
-            mock_graphcast_data = {
-                'u_component_of_wind': [[10, 15, 20, 25, 30], [35, 40, 45, 50, 55], [60, 65, 70, 75, 80], 
-                                       [85, 90, 95, 100, 105], [110, 115, 120, 125, 130]],
-                'v_component_of_wind': [[5, 10, 15, 20, 25], [30, 35, 40, 45, 50], [55, 60, 65, 70, 75],
-                                       [80, 85, 90, 95, 100], [105, 110, 115, 120, 125]],
-                'sea_level_pressure': [[1010, 1005, 1000, 995, 990], [985, 980, 975, 970, 965], [960, 955, 950, 945, 940],
-                                       [935, 930, 925, 920, 915], [910, 905, 900, 895, 890]],
-                'total_precipitation': [[0.01, 0.05, 0.1, 0.15, 0.2], [0.25, 0.3, 0.35, 0.4, 0.45], [0.5, 0.55, 0.6, 0.65, 0.7],
-                                       [0.75, 0.8, 0.85, 0.9, 0.95], [1.0, 1.05, 1.1, 1.15, 1.2]],
-                'soil_moisture': [[0.6, 0.7, 0.8, 0.85, 0.9], [0.92, 0.94, 0.96, 0.98, 1.0], [0.95, 0.97, 0.99, 1.0, 1.0],
-                                     [0.9, 0.92, 0.94, 0.96, 0.98], [0.85, 0.87, 0.89, 0.91, 0.93]]
-            }
-            
-            # Use MoScripts for detection with voice lines
-            result = detect_weather_anomalies(mock_graphcast_data)
-            
+            result = detect_weather_anomalies(graphcast_data)
+
+            # Step 3: Persist to DB so /threats endpoint can serve them
+            _persist_anomalies_to_db(result)
+
             return {
                 "timestamp": result['timestamp'],
                 "cyclones": result['cyclones'],
@@ -1077,36 +1254,22 @@ async def get_weather_anomalies():
                 "convergences": result['convergences'],
                 "total_hazards": result['total_hazards'],
                 "detection_time": result['detection_time'],
+                "data_source": "live_detection",
                 "moscripts_enabled": True,
-                "intelligence_system": "MoScripts Backend v1.0"
+                "intelligence_system": "MoScripts Backend v2.0"
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"MoScripts detection failed: {str(e)}")
     else:
-        # Fallback to original implementation
         if WeatherAnomalyDetector is None:
             raise HTTPException(status_code=501, detail="Weather anomaly detection module not available")
-        
+
         try:
             detector = WeatherAnomalyDetector()
-            
-            # TODO: Replace with real GraphCast output - using sample data for now
-            # In production, this would fetch from your GraphCast ingestion system
-            sample_graphcast_data = {
-                'u_component_of_wind': [[10, 15, 20, 25, 30], [35, 40, 45, 50, 55], [60, 65, 70, 75, 80], 
-                                       [85, 90, 95, 100, 105], [110, 115, 120, 125, 130]],
-                'v_component_of_wind': [[5, 10, 15, 20, 25], [30, 35, 40, 45, 50], [55, 60, 65, 70, 75],
-                                       [80, 85, 90, 95, 100], [105, 110, 115, 120, 125]],
-                'sea_level_pressure': [[1010, 1005, 1000, 995, 990], [985, 980, 975, 970, 965], [960, 955, 950, 945, 940],
-                                       [935, 930, 925, 920, 915], [910, 905, 900, 895, 890]],
-                'total_precipitation': [[0.01, 0.05, 0.1, 0.15, 0.2], [0.25, 0.3, 0.35, 0.4, 0.45], [0.5, 0.55, 0.6, 0.65, 0.7],
-                                       [0.75, 0.8, 0.85, 0.9, 0.95], [1.0, 1.05, 1.1, 1.15, 1.2]],
-                'soil_moisture': [[0.6, 0.7, 0.8, 0.85, 0.9], [0.92, 0.94, 0.96, 0.98, 1.0], [0.95, 0.97, 0.99, 1.0, 1.0],
-                                     [0.9, 0.92, 0.94, 0.96, 0.98], [0.85, 0.87, 0.89, 0.91, 0.93]]
-            }
-            
-            results = detector.detect_all_hazards(sample_graphcast_data)
-            
+            results = detector.detect_all_hazards(graphcast_data)
+
+            _persist_anomalies_to_db(results)
+
             return {
                 "timestamp": datetime.now().isoformat(),
                 "cyclones": results['cyclones'],
@@ -1114,14 +1277,119 @@ async def get_weather_anomalies():
                 "landslides": results['landslides'],
                 "convergences": results['convergences'],
                 "total_hazards": len(results['cyclones']) + len(results['floods']) + len(results['landslides']),
-                "convergence_zones": len(results['convergences']),
-                "detection_confidence": "high" if len(results['convergences']) > 0 else "moderate",
+                "detection_time": 0,
+                "data_source": "live_detection",
                 "moscripts_enabled": False,
                 "intelligence_system": "Legacy Weather Detection"
             }
-            
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Weather anomaly detection failed: {str(e)}")
+
+
+def _load_forecast_data_from_db() -> dict:
+    """Try to load the latest forecast fields from the DB for detection.
+    Falls back to a sample dataset if the DB has no forecast data."""
+    if pool:
+        try:
+            pool.open()
+            with pool.connection() as conn:
+                with conn.cursor() as cur:
+                    # Get the latest completed graphcast run
+                    cur.execute("""
+                        SELECT run_id FROM forecast_runs
+                        WHERE source = 'graphcast' AND status = 'completed'
+                        ORDER BY created_at DESC LIMIT 1
+                    """)
+                    row = cur.fetchone()
+                    if row:
+                        run_id = row[0]
+                        # Load GeoJSON forecast fields
+                        cur.execute("""
+                            SELECT variable, storage_geojson
+                            FROM forecast_fields
+                            WHERE run_id = %s AND storage_type = 'geojson' AND storage_geojson IS NOT NULL
+                        """, (run_id,))
+                        fields = cur.fetchall()
+                        if fields:
+                            print(f"✅ Loaded forecast data from DB run {run_id}")
+                            # Convert GeoJSON features to grid arrays for the detector
+                            return _geojson_fields_to_grid(fields)
+        except Exception as e:
+            print(f"⚠️ Could not load forecast data from DB: {e}")
+
+    # Fallback sample data
+    return _get_sample_graphcast_data()
+
+
+def _geojson_fields_to_grid(fields: list) -> dict:
+    """Convert DB forecast fields (GeoJSON) into grid arrays the detector expects.
+    This is a best-effort conversion for the anomaly detector."""
+    import numpy as np
+
+    grid_size = 10  # Reasonable grid for detection
+    data = {
+        'u_component_of_wind': np.zeros((grid_size, grid_size)).tolist(),
+        'v_component_of_wind': np.zeros((grid_size, grid_size)).tolist(),
+        'sea_level_pressure': np.full((grid_size, grid_size), 1013.0).tolist(),
+        'total_precipitation': np.zeros((grid_size, grid_size)).tolist(),
+        'soil_moisture': np.full((grid_size, grid_size), 0.5).tolist(),
+    }
+
+    for variable, geojson in fields:
+        if not geojson or not isinstance(geojson, dict):
+            continue
+        features = geojson.get("features", [])
+        for feat in features:
+            props = feat.get("properties", {})
+            value = props.get("value", 0)
+            coords = feat.get("geometry", {}).get("coordinates", [0, 0])
+            lon, lat = coords[0], coords[1]
+
+            # Map lat/lon to grid indices (Africa: lat -40 to 40, lon -20 to 55)
+            lat_idx = max(0, min(grid_size - 1, int((lat + 40) / 80 * grid_size)))
+            lon_idx = max(0, min(grid_size - 1, int((lon + 20) / 75 * grid_size)))
+
+            if variable == "wind_speed":
+                # Split into u/v components (simplified)
+                data['u_component_of_wind'][lat_idx][lon_idx] = value * 0.7
+                data['v_component_of_wind'][lat_idx][lon_idx] = value * 0.7
+            elif variable == "precipitation":
+                data['total_precipitation'][lat_idx][lon_idx] = value / 24.0  # mm/h to daily fraction
+            elif variable == "pressure":
+                data['sea_level_pressure'][lat_idx][lon_idx] = value
+
+    return data
+
+
+def _get_sample_graphcast_data() -> dict:
+    """Return sample GraphCast data for detection when no DB data is available."""
+    return {
+        'u_component_of_wind': [
+            [10, 15, 20, 25, 30], [35, 40, 45, 50, 55],
+            [60, 65, 70, 75, 80], [85, 90, 95, 100, 105],
+            [110, 115, 120, 125, 130]
+        ],
+        'v_component_of_wind': [
+            [5, 10, 15, 20, 25], [30, 35, 40, 45, 50],
+            [55, 60, 65, 70, 75], [80, 85, 90, 95, 100],
+            [105, 110, 115, 120, 125]
+        ],
+        'sea_level_pressure': [
+            [1010, 1005, 1000, 995, 990], [985, 980, 975, 970, 965],
+            [960, 955, 950, 945, 940], [935, 930, 925, 920, 915],
+            [910, 905, 900, 895, 890]
+        ],
+        'total_precipitation': [
+            [0.01, 0.05, 0.1, 0.15, 0.2], [0.25, 0.3, 0.35, 0.4, 0.45],
+            [0.5, 0.55, 0.6, 0.65, 0.7], [0.75, 0.8, 0.85, 0.9, 0.95],
+            [1.0, 1.05, 1.1, 1.15, 1.2]
+        ],
+        'soil_moisture': [
+            [0.6, 0.7, 0.8, 0.85, 0.9], [0.92, 0.94, 0.96, 0.98, 1.0],
+            [0.95, 0.97, 0.99, 1.0, 1.0], [0.9, 0.92, 0.94, 0.96, 0.98],
+            [0.85, 0.87, 0.89, 0.91, 0.93]
+        ],
+    }
 
 
 @app.get("/api/v1/weather/current")

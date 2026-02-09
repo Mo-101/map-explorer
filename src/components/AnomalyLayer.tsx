@@ -15,10 +15,10 @@ interface AnomalyBuckets {
 }
 
 const MOCK_ANOMALIES: AnomalyBuckets = {
-  cyclones: [{ id: "cy-1", center_lat: 12.5, center_lon: 42.0, max_wind_speed: 180, intensity: "Category 3" }],
-  floods: [{ id: "fl-1", center_lat: 6.5, center_lon: 3.5, risk_score: 0.85 }],
-  landslides: [{ id: "ls-1", center_lat: -1.2, center_lon: 36.8, risk_score: 0.9 }],
-  convergences: [{ id: "cz-1", center_lat: 10.0, center_lon: 20.0, risk_multiplier: 2.1 }],
+  cyclones: [{ id: "cy-1", center_lat: 12.5, center_lng: 42.0, max_wind_speed: 180, intensity: "Category 3" }],
+  floods: [{ id: "fl-1", center_lat: 6.5, center_lng: 3.5, risk_score: 0.85 }],
+  landslides: [{ id: "ls-1", center_lat: -1.2, center_lng: 36.8, risk_score: 0.9 }],
+  convergences: [{ id: "cz-1", center_lat: 10.0, center_lng: 20.0, risk_multiplier: 2.1 }],
 };
 
 const AnomalyLayer: React.FC<AnomalyLayerProps> = ({ map, apiBaseUrl }) => {
@@ -63,7 +63,7 @@ const AnomalyLayer: React.FC<AnomalyLayerProps> = ({ map, apiBaseUrl }) => {
         type: "FeatureCollection",
         features: data.map((item) => ({
           type: "Feature",
-          geometry: { type: "Point", coordinates: [item.center_lon, item.center_lat] },
+          geometry: { type: "Point", coordinates: [item.center_lng, item.center_lat] },
           properties: item,
         })),
       };
