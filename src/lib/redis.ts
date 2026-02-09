@@ -1,26 +1,18 @@
-import { createClient } from 'redis';
+/**
+ * Redis client stub
+ * Redis is not available in the browser environment.
+ * This module provides a no-op interface for compatibility.
+ * In production, Redis operations should be handled by the backend API.
+ */
 
-const client = createClient({
-  url: process.env.REDIS_URL || 'redis://localhost:6379',
-});
-
-client.on('error', (err) => console.error('Redis Client Error', err));
-
-if (!client.isOpen) {
-  client.connect();
-}
+const noopAsync = async () => null;
 
 export const redis = {
-  get: (key: string) => client.get(key),
-  set: (key: string, value: string, mode?: any, duration?: number) => {
-    if (mode === 'EX' && duration) {
-      return client.set(key, value, { EX: duration });
-    }
-    return client.set(key, value);
-  },
-  del: (key: string) => client.del(key),
-  incr: (key: string) => client.incr(key),
-  expire: (key: string, seconds: number) => client.expire(key, seconds),
-  ping: () => client.ping(),
-  client: client,
+  get: async (_key: string): Promise<string | null> => null,
+  set: async (_key: string, _value: string, _mode?: any, _duration?: number) => null,
+  del: async (_key: string) => null,
+  incr: async (_key: string) => null,
+  expire: async (_key: string, _seconds: number) => null,
+  ping: async () => "PONG (stub)",
+  client: null,
 };

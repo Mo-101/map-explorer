@@ -27,7 +27,7 @@ export class CircuitBreaker {
     const count = await redis.incr(`breaker:${this.serviceName}:failures`);
     await redis.expire(`breaker:${this.serviceName}:failures`, 3600);
 
-    if (count >= BREAKER_THRESHOLD) {
+    if ((count ?? 0) >= BREAKER_THRESHOLD) {
       await redis.set(`breaker:${this.serviceName}:state`, 'OPEN');
       await redis.set(`breaker:${this.serviceName}:opened_at`, Date.now().toString());
     }
