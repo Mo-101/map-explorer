@@ -1,3 +1,4 @@
+import sys
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -13,6 +14,14 @@ from psycopg_pool import ConnectionPool
 from dotenv import load_dotenv
 import asyncio
 from contextlib import asynccontextmanager
+
+# Avoid UnicodeEncodeError on Windows consoles when MoScripts log emoji/unicode.
+for _stream in (getattr(sys, "stdout", None), getattr(sys, "stderr", None)):
+    try:
+        if _stream and hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # Import weather anomaly detection
 try:

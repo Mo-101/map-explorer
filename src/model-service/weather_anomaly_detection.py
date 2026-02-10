@@ -546,6 +546,34 @@ class WeatherAnomalyDetector:
             
         return regions
 
+
+# -----------------------------------------------------------------------------
+# Thin wrapper detectors used by backend MoScripts
+# -----------------------------------------------------------------------------
+
+class CycloneDetector:
+    def __init__(self):
+        self._detector = WeatherAnomalyDetector()
+
+    def detect(self, graphcast_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return self._detector.detect_cyclones(graphcast_data)
+
+
+class FloodDetector:
+    def __init__(self):
+        self._detector = WeatherAnomalyDetector()
+
+    def detect(self, graphcast_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return self._detector.detect_floods(graphcast_data)
+
+
+class LandslideDetector:
+    def __init__(self):
+        self._detector = WeatherAnomalyDetector()
+
+    def detect(self, graphcast_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return self._detector.detect_landslides(graphcast_data)
+
 # Example usage and testing
 if __name__ == "__main__":
     detector = WeatherAnomalyDetector()
