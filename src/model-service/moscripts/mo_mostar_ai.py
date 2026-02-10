@@ -1,13 +1,14 @@
 """
 MoScript: MoStar AI - Multi-Model Mesh Intelligence
 ================================================
-Integrates Azure OpenAI + Google Gemini for African technological sovereignty
+Integrates Azure OpenAI + Google Gemini + Anthropic Claude for African technological sovereignty
 
 This creates the Multi-Model Mesh:
 1. Azure Soul (GPT-4o-mini) - Analytical intelligence
-2. Gemini Mind (Gemini Pro) - Pattern recognition  
-3. Mesh Synthesizer - Combines insights from both models
-4. Voice lines with African personality and sass
+2. Gemini Mind (Gemini Pro) - Pattern recognition
+3. Claude Spirit (Claude Sonnet) - Strategic reasoning & safety analysis
+4. Mesh Synthesizer - Combines insights from all three models
+5. Voice lines with African personality and sass
 """
 
 import time
@@ -29,6 +30,15 @@ except ImportError:
     print("⚠️ AI libraries not available - using mock responses")
     AI_LIBRARIES_AVAILABLE = False
     openai = genai = None
+
+# Try to import Anthropic Claude
+try:
+    import anthropic
+    CLAUDE_AVAILABLE = True
+except ImportError:
+    print("⚠️ Anthropic Claude library not available - using mock responses")
+    CLAUDE_AVAILABLE = False
+    anthropic = None
 
 
 class MoAzureSoul(MoScript):
@@ -253,9 +263,134 @@ class MoGeminiMind(MoScript):
         )
 
 
+class MoClaudeSpirit(MoScript):
+    """
+    Anthropic Claude integration - Strategic reasoning & safety intelligence
+    """
+
+    def __init__(self):
+        super().__init__(
+            id='mo-claude-spirit-003',
+            name='Claude Spirit - Strategic Reasoning',
+            trigger='onAIQuery',
+            sass=True
+        )
+
+        # Initialize Anthropic Claude client
+        if CLAUDE_AVAILABLE and anthropic:
+            api_key = os.getenv('ANTHROPIC_API_KEY')
+            if api_key:
+                self.client = anthropic.Anthropic(api_key=api_key)
+                self.model = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-4-20250514')
+            else:
+                self.client = None
+                self.model = None
+        else:
+            self.client = None
+            self.model = None
+
+    def logic(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Analyze query using Claude for strategic reasoning and safety analysis
+        """
+        start_time = time.time()
+        query = inputs.get('query', '')
+        context = inputs.get('context', '')
+
+        if not self.client:
+            return {
+                'analysis': 'Mock Claude analysis: Strategic assessment complete. Safety protocols verified.',
+                'confidence': 0.87,
+                'processing_time': time.time() - start_time,
+                'model': 'claude-sonnet-mock',
+                'safety_flags': []
+            }
+
+        try:
+            system_prompt = """You are Claude Spirit, the strategic reasoning intelligence of the MoStar AI system for AFRO STORM.
+
+            You excel at:
+            - Strategic disaster response planning and resource allocation
+            - Safety analysis and humanitarian impact assessment
+            - Cross-regional risk correlation and cascade prediction
+            - Evidence synthesis with nuanced uncertainty quantification
+            - Multilingual communication for diverse African communities
+
+            Your personality is thoughtful, strategic, and deeply committed to protecting
+            African communities. You provide balanced analysis with clear reasoning chains
+            and always highlight safety-critical considerations."""
+
+            user_prompt = f"Context: {context}\n\nQuery: {query}\n\nProvide strategic analysis with safety assessment."
+
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=1000,
+                system=system_prompt,
+                messages=[
+                    {"role": "user", "content": user_prompt}
+                ]
+            )
+
+            analysis = response.content[0].text
+            processing_time = time.time() - start_time
+
+            return {
+                'analysis': analysis,
+                'confidence': 0.92,
+                'processing_time': processing_time,
+                'model': f'claude-{self.model}',
+                'tokens_used': (response.usage.input_tokens + response.usage.output_tokens) if response.usage else 0,
+                'safety_flags': self._extract_safety_flags(analysis)
+            }
+
+        except Exception as e:
+            return {
+                'analysis': f'Claude analysis error: {str(e)}',
+                'confidence': 0.0,
+                'processing_time': time.time() - start_time,
+                'model': 'claude-error',
+                'safety_flags': []
+            }
+
+    def _extract_safety_flags(self, analysis: str) -> List[str]:
+        """
+        Extract safety-critical flags from Claude analysis
+        """
+        flags = []
+        safety_keywords = ['critical', 'urgent', 'evacuate', 'immediate', 'life-threatening', 'emergency']
+
+        for keyword in safety_keywords:
+            if keyword.lower() in analysis.lower():
+                flags.append(keyword)
+
+        return flags
+
+    def voice_line(self, result: Dict[str, Any], inputs: Dict[str, Any]) -> str:
+        """
+        Generate Claude Spirit voice line
+        """
+        confidence = result.get('confidence', 0) * 100
+        processing_time = result.get('processing_time', 0) * 1000
+        safety_flags = result.get('safety_flags', [])
+
+        if result.get('confidence', 0) == 0:
+            return f"💜 Claude Spirit signal disrupted. Reconnecting strategic intelligence, brother."
+
+        safety_note = ""
+        if safety_flags:
+            safety_note = f" Safety flags: {', '.join(safety_flags)}."
+
+        return (
+            f"💜 Claude Spirit strategic analysis complete.{safety_note} "
+            f"Confidence: {confidence:.0f}%. "
+            f"Processing: {processing_time:.0f}ms. "
+            f"Strategic clarity through deep reasoning. 🔥"
+        )
+
+
 class MoMeshSynthesizer(MoScript):
     """
-    Multi-Model Mesh Synthesizer - Combines Azure + Gemini insights
+    Multi-Model Mesh Synthesizer - Combines Azure + Gemini + Claude insights
     """
     
     def __init__(self):
@@ -265,86 +400,84 @@ class MoMeshSynthesizer(MoScript):
             trigger='onAIQuery',
             sass=True
         )
-        
+
         self.azure_soul = MoAzureSoul()
         self.gemini_mind = MoGeminiMind()
-    
+        self.claude_spirit = MoClaudeSpirit()
+
     def logic(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Synthesize insights from both AI models
+        Synthesize insights from all three AI models
         """
         start_time = time.time()
-        
-        # Run both models in parallel (async simulation)
+
+        # Run all models
         azure_result = self.azure_soul.execute(inputs)
         gemini_result = self.gemini_mind.execute(inputs)
-        
+        claude_result = self.claude_spirit.execute(inputs)
+
         # Synthesize the results
-        synthesis = self._synthesize_insights(azure_result, gemini_result, inputs)
+        synthesis = self._synthesize_insights(azure_result, gemini_result, claude_result, inputs)
         processing_time = time.time() - start_time
-        
+
+        confidences = [
+            azure_result.get('confidence', 0),
+            gemini_result.get('confidence', 0),
+            claude_result.get('confidence', 0),
+        ]
+
         return {
             'azure_analysis': azure_result.get('analysis', ''),
             'gemini_analysis': gemini_result.get('analysis', ''),
+            'claude_analysis': claude_result.get('analysis', ''),
             'synthesis': synthesis,
             'azure_confidence': azure_result.get('confidence', 0),
             'gemini_confidence': gemini_result.get('confidence', 0),
-            'combined_confidence': (azure_result.get('confidence', 0) + gemini_result.get('confidence', 0)) / 2,
+            'claude_confidence': claude_result.get('confidence', 0),
+            'combined_confidence': sum(confidences) / len(confidences),
             'processing_time': processing_time,
-            'models_used': ['azure-gpt-4o-mini', 'gemini-pro'],
+            'models_used': ['azure-gpt-4o-mini', 'gemini-pro', 'claude-sonnet'],
+            'safety_flags': claude_result.get('safety_flags', []),
             'mesh_status': 'operational'
         }
     
-    def _synthesize_insights(self, azure_result: Dict, gemini_result: Dict, inputs: Dict) -> str:
+    def _synthesize_insights(self, azure_result: Dict, gemini_result: Dict, claude_result: Dict, inputs: Dict) -> str:
         """
-        Combine insights from both models into unified analysis
+        Combine insights from all three models into unified analysis
         """
         azure_analysis = azure_result.get('analysis', '')
         gemini_analysis = gemini_result.get('analysis', '')
+        claude_analysis = claude_result.get('analysis', '')
         patterns = gemini_result.get('patterns_found', [])
-        
-        # Create synthesis prompt
-        synthesis_prompt = f"""
-        SYNthesize these two AI analyses into unified intelligence:
+        safety_flags = claude_result.get('safety_flags', [])
 
-        AZURE ANALYSIS (Analytical Intelligence):
-        {azure_analysis}
-
-        GEMINI ANALYSIS (Pattern Recognition):
-        {gemini_analysis}
-
-        PATTERNS IDENTIFIED: {patterns}
-
-        ORIGINAL QUERY: {inputs.get('query', '')}
-
-        Provide a unified synthesis that combines:
-        1. Azure's analytical precision
-        2. Gemini's pattern recognition
-        3. Actionable recommendations
-        4. Risk assessment
-        5. African context and sovereignty
-
-        The synthesis should be comprehensive yet concise, with clear actionable insights.
+        # For now, return a structured synthesis (in real implementation, this would use another AI call)
+        safety_section = ""
+        if safety_flags:
+            safety_section = f"""
+        SAFETY ALERTS: {', '.join(safety_flags)}
+        Claude Spirit has flagged safety-critical considerations requiring immediate attention.
         """
-        
-        # For now, return a simple synthesis (in real implementation, this would use another AI call)
+
         return f"""
         🔥 MESH SYNTHESIS COMPLETE 🔥
-        
+
         Azure provides analytical precision with {azure_result.get('confidence', 0)*100:.0f}% confidence.
         Gemini identifies patterns: {', '.join(patterns) if patterns else 'No specific patterns'}.
-        
-        Unified Analysis: Both analytical rigor and pattern recognition indicate significant convergence events.
-        The combination of Azure's data-driven approach with Gemini's pattern detection reveals 
-        compound risks that single-model analysis would miss.
-        
+        Claude provides strategic reasoning with {claude_result.get('confidence', 0)*100:.0f}% confidence.
+        {safety_section}
+        Unified Analysis: The triple-model mesh combines analytical rigor, pattern recognition,
+        and strategic reasoning to reveal compound risks that single-model analysis would miss.
+        Claude's safety analysis adds a critical layer of humanitarian impact assessment.
+
         Recommendations:
         - Immediate multi-agency coordination required
         - Resource pre-positioning for compound emergency
         - Enhanced monitoring for cascade effects
         - Community preparedness for multi-hazard scenario
-        
-        This represents African technological sovereignty in action - combining global AI capabilities 
+        - Strategic response planning informed by Claude's reasoning
+
+        This represents African technological sovereignty in action - combining global AI capabilities
         with local intelligence for maximum protection.
         """
     
@@ -376,11 +509,13 @@ class MoStarAI:
     def __init__(self):
         self.azure_soul = MoAzureSoul()
         self.gemini_mind = MoGeminiMind()
+        self.claude_spirit = MoClaudeSpirit()
         self.mesh_synthesizer = MoMeshSynthesizer()
-        
+
         print("🔥 MoStar AI initialized")
         print("🧠 Azure Soul ready")
         print("🔮 Gemini Mind ready")
+        print("💜 Claude Spirit ready")
         print("🔥 Mesh Synthesizer ready")
         print("⚡ Multi-Model Mesh operational")
     

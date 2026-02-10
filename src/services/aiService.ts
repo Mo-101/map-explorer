@@ -1,7 +1,8 @@
 /**
- * Azure AI Service - Sole AI Provider
- * All AI operations use Azure OpenAI (afro-ai-resource)
- * No external AI providers - sovereign African health intelligence
+ * AI Service - Multi-Provider Intelligence
+ * Primary: Azure OpenAI (afro-ai-resource)
+ * Strategic: Anthropic Claude (strategic reasoning & safety)
+ * Sovereign African health intelligence through multi-model fusion
  */
 
 import { DisasterType } from "../types/disaster";
@@ -18,6 +19,7 @@ interface MapEvent {
   source: string;
 }
 import { fetchAzureAnalysis } from "./azureService";
+import { fetchClaudeAnalysis } from "./claudeService";
 
 // Batch cache for 30 minutes
 const BATCH_CACHE_TTL = 30 * 60 * 1000;
@@ -139,20 +141,35 @@ Analyze landscape vulnerability and historical context. Be concise but thorough.
 };
 
 /**
- * Deep disaster analysis with sources
+ * Deep disaster analysis with sources - uses both Azure and Claude
  */
 export const getDeepDisasterAnalysis = async (query: string) => {
   return withBatchCache(`deep_${query.substring(0, 50)}`, async () => {
     const enhancedQuery = `${query}
 
 Provide a comprehensive analysis with citations to scientific sources where possible.`;
-    
-    const response = await fetchAzureAnalysis(enhancedQuery);
-    
+
+    // Run Azure and Claude in parallel for richer analysis
+    const [azureResponse, claudeResponse] = await Promise.allSettled([
+      fetchAzureAnalysis(enhancedQuery),
+      fetchClaudeAnalysis(`Strategic safety analysis for African disaster response: ${query}`)
+    ]);
+
+    const azureText = azureResponse.status === 'fulfilled' ? azureResponse.value : '';
+    const claudeText = claudeResponse.status === 'fulfilled' ? claudeResponse.value : '';
+
+    const providers: string[] = [];
+    if (azureText) providers.push("Azure OpenAI");
+    if (claudeText) providers.push("Anthropic Claude");
+
+    const combinedText = claudeText
+      ? `${azureText}\n\n--- Strategic Assessment (Claude) ---\n${claudeText}`
+      : azureText;
+
     return {
-      text: response,
-      sources: [], // Azure doesn't provide grounding like Gemini
-      provider: "Azure OpenAI"
+      text: combinedText,
+      sources: [],
+      provider: providers.join(" + ") || "None"
     };
   });
 };
@@ -187,6 +204,32 @@ Requirements:
 ${language !== 'en' ? `- Language: ${language}` : ''}`;
 
   return await fetchAzureAnalysis(prompt);
+};
+
+/**
+ * Get strategic analysis from Claude for disaster response planning
+ */
+export const getStrategicAnalysis = async (
+  query: string,
+  region: string = "Africa"
+): Promise<{ analysis: string; provider: string }> => {
+  return withBatchCache(`strategic_${region}_${query.substring(0, 50)}`, async () => {
+    const prompt = `Strategic disaster response analysis for ${region}:
+${query}
+
+Provide:
+1. Humanitarian impact assessment
+2. Resource allocation recommendations
+3. Cross-regional risk correlations
+4. Safety-critical considerations
+5. Recommended response timeline`;
+
+    const response = await fetchClaudeAnalysis(prompt);
+    return {
+      analysis: response,
+      provider: "Anthropic Claude"
+    };
+  });
 };
 
 /**
