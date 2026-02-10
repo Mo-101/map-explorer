@@ -38,6 +38,30 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _log_access(consumer_id: str, artifact_type: str) -> None:
+    """
+    Import-safe access logging.
+
+    Supports both package execution (e.g. `integration.access_api`) and direct
+    module execution from this directory (e.g. `access_api`).
+    """
+    try:
+        from .audit_log import log_access  # type: ignore
+    except ImportError:
+        from audit_log import log_access  # type: ignore
+
+    log_access(consumer_id, artifact_type)
+
+
+def _get_access_logs() -> List[Dict[str, Any]]:
+    try:
+        from .audit_log import get_access_logs  # type: ignore
+    except ImportError:
+        from audit_log import get_access_logs  # type: ignore
+
+    return get_access_logs()
+
+
 class ArtifactAccessAPI:
     """
     Read-only API for accessing validated artifacts.
@@ -108,9 +132,7 @@ class ArtifactAccessAPI:
         - Validates permissions
         - Returns immutable reference
         """
-        # Log access attempt
-        from .audit_log import log_access
-        log_access(consumer_id, artifact_type)
+        _log_access(consumer_id, artifact_type)
         
         # Get artifact record from registry
         record = self.registry.get(artifact_type)
@@ -158,9 +180,7 @@ class ArtifactAccessAPI:
         This method returns metadata ONLY.
         It does NOT return artifact contents.
         """
-        # Log access attempt
-        from .audit_log import log_access
-        log_access(consumer_id, f"metadata:{artifact_type}")
+        _log_access(consumer_id, f"metadata:{artifact_type}")
         
         # Get artifact record from registry
         record = self.registry.get(artifact_type)
@@ -196,9 +216,7 @@ class ArtifactAccessAPI:
         This method returns metadata ONLY.
         It does NOT provide access to artifact contents.
         """
-        # Log access attempt
-        from .audit_log import log_access
-        log_access(consumer_id, "list_all")
+        _log_access(consumer_id, "list_all")
         
         # Get all artifacts from registry
         records = self.registry.list_all()
@@ -237,9 +255,7 @@ class ArtifactAccessAPI:
         This method checks existence ONLY.
         It does NOT provide access to contents.
         """
-        # Log access attempt
-        from .audit_log import log_access
-        log_access(consumer_id, f"exists:{artifact_type}")
+        _log_access(consumer_id, f"exists:{artifact_type}")
         
         # Check if artifact exists in registry
         return self.registry.exists(artifact_type)
@@ -265,9 +281,7 @@ class ArtifactAccessAPI:
         This method returns metadata ONLY.
         It does NOT provide access to contents.
         """
-        # Log access attempt
-        from .audit_log import log_access
-        log_access(consumer_id, f"by_phase:{phase_name}")
+        _log_access(consumer_id, f"by_phase:{phase_name}")
         
         # Get artifacts by phase
         records = self.registry.get_produced_by_phase(phase_name)
@@ -332,13 +346,11 @@ class ArtifactAccessAPI:
         Returns factual statistics only.
         No interpretation of access patterns.
         """
-        from .audit_log import get_access_logs
-        
         return {
             'total_artifacts': len(self.registry.list_all()),
             'api_active': True,
             'registry_connected': self.registry is not None,
-            'access_logs_count': len(get_access_logs())
+            'access_logs_count': len(_get_access_logs())
         }
 
 

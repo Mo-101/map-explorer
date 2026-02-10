@@ -37,6 +37,21 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _log_access(consumer_id: str, artifact_type: str) -> None:
+    """
+    Import-safe access logging.
+
+    Supports both package execution (e.g. `integration.artifact_registry`) and
+    direct script/module execution from this directory (e.g. `artifact_registry`).
+    """
+    try:
+        from .audit_log import log_access  # type: ignore
+    except ImportError:
+        from audit_log import log_access  # type: ignore
+
+    log_access(consumer_id, artifact_type)
+
+
 @dataclass(frozen=True)
 class ArtifactRecord:
     """
@@ -169,9 +184,7 @@ class ArtifactRegistry:
         - Logs access attempt
         - Returns immutable record
         """
-        # Log access attempt
-        from .audit_log import log_access
-        log_access("integration.registry", artifact_type)
+        _log_access("integration.registry", artifact_type)
         
         # Return immutable copy
         record = self._registry.get(artifact_type)
@@ -190,9 +203,7 @@ class ArtifactRegistry:
         ---------
         Returns copies, not references to internal storage.
         """
-        # Log access attempt
-        from .audit_log import log_access
-        log_access("integration.registry", "list_all")
+        _log_access("integration.registry", "list_all")
         
         # Return copies to prevent modification
         return list(self._registry.values())
@@ -227,9 +238,7 @@ class ArtifactRegistry:
         List[ArtifactRecord]
             List of artifacts produced by the phase
         """
-        # Log access attempt
-        from .audit_log import log_access
-        log_access("integration.registry", f"by_phase:{phase_name}")
+        _log_access("integration.registry", f"by_phase:{phase_name}")
         
         return [
             record for record in self._registry.values()

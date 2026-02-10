@@ -1,197 +1,140 @@
 """
 Integration Shim Test Script
-========================
+============================
 
 PURPOSE:
     Test integration shim components to verify read-only buffer functionality.
-    
+
 TESTS:
     - Component initialization
-    - Artifact registration via telemetry
+    - Artifact registration
     - Read-only access via API
     - Audit trail logging
     - Registry immutability
 """
 
-import sys
+from __future__ import annotations
+
 import os
+import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
-# Add current directory to path
-sys.path.insert(0, os.path.abspath(os.getcwd()))
+# Allow running from any working directory: `python test_integration_shim.py`
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-# Import integration shim components
 try:
-    from artifact_registry import ArtifactRegistry, ArtifactRecord
-    from telemetry_subscriber import TelemetrySubscriber
+    from artifact_registry import ArtifactRecord, ArtifactRegistry
     from access_api import ArtifactAccessAPI
-    from audit_log import log_access, get_access_logs
+    from telemetry_subscriber import TelemetrySubscriber
+    from audit_log import get_access_logs
 except ImportError as e:
-    print('❌ FAIL: Import error - {e}')
-    sys.exit(1)
+    print(f"FAIL: Import error - {e}")
+    raise SystemExit(1)
 
 
-def test_integration_shim():
-    """Test all integration shim components."""
-    
-    print('🔥 PHASE C: INTEGRATION SHIM TEST')
-    print('=' * 50)
-    
-    # Test 1: Initialize components
+def test_integration_shim() -> bool:
+    print("PHASE C: INTEGRATION SHIM TEST")
+    print("=" * 50)
+
     print()
-    print('🧪 Testing: Component initialization')
+    print("Testing: Component initialization")
     try:
         registry = ArtifactRegistry()
-        subscriber = TelemetrySubscriber(registry)
+        _subscriber = TelemetrySubscriber(registry)
         api = ArtifactAccessAPI(registry)
-        print('✅ PASS: All components initialized successfully')
+        print("PASS: All components initialized successfully")
     except Exception as e:
-        print(f'❌ FAIL: Component initialization failed - {e}')
+        print(f"FAIL: Component initialization failed - {e}")
         return False
-    
-    # Test 2: Register artifact via telemetry
+
     print()
-    print('🧪 Testing: Artifact registration via telemetry')
+    print("Testing: Artifact registration")
     try:
-        # Create test file first
-        import tempfile
-        from pathlib import Path
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             f.write('{"test": "tracks"}')
             test_file_path = f.name
-        
-        # Create artifact record
+
         record = ArtifactRecord(
-            artifact_type='DetectedTracks',
+            artifact_type="DetectedTracks",
             path=test_file_path,
-            produced_by_phase='phase3a_detect',
-            timestamp='2024-01-01T00:00:00Z'
+            produced_by_phase="phase3a_detect",
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
         )
-        
-        # Register directly (simulating telemetry result)
+
         registry.register(record)
-        
-        # Verify artifact was registered
-        registered_record = registry.get('DetectedTracks')
-        if registered_record and registered_record.artifact_type == 'DetectedTracks':
-            print('✅ PASS: Artifact registered successfully')
-        else:
-            print('❌ FAIL: Artifact not registered')
+
+        registered_record = registry.get("DetectedTracks")
+        if not registered_record or registered_record.artifact_type != "DetectedTracks":
+            print("FAIL: Artifact not registered")
             return False
-            
+
+        print("PASS: Artifact registered successfully")
     except Exception as e:
-        print(f'❌ FAIL: Direct registration failed - {e}')
+        print(f"FAIL: Artifact registration failed - {e}")
         return False
-    try:
-        # Create test file first
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write('{"test": "tracks"}')
-            test_file_path = f.name
-        
-        # Create artifact record
-        record = ArtifactRecord(
-            artifact_type='DetectedTracks',
-            path=test_file_path,
-            produced_by_phase='phase3a_detect',
-            timestamp='2024-01-01T00:00:00Z'
-        )
-        
-        # Register directly (simulating telemetry result)
-        registry.register(record)
-        
-        # Verify artifact was registered
-        registered_record = registry.get('DetectedTracks')
-        if registered_record and registered_record.artifact_type == 'DetectedTracks':
-            print('✅ PASS: Artifact registered successfully')
-        else:
-            print('❌ FAIL: Artifact not registered')
-            return False
-            
-    except Exception as e:
-        print(f'❌ FAIL: Direct registration failed - {e}')
-        return False
-    
-    # Test 3: Read-only access via API
+
     print()
-    print('🧪 Testing: Read-only access via API')
+    print("Testing: Read-only access via API")
     try:
-        # Test artifact path access
-        path = api.get_artifact_path('DetectedTracks', 'test_consumer')
-        if path and Path(path).exists():
-            print('✅ PASS: Read-only access successful')
-        else:
-            print('❌ FAIL: Read-only access failed')
+        path = api.get_artifact_path("DetectedTracks", "test_consumer")
+        if not path or not Path(path).exists():
+            print("FAIL: Read-only path access failed")
             return False
-        
-        # Test artifact metadata access
-        metadata = api.get_artifact_metadata('DetectedTracks', 'test_consumer')
-        if metadata and metadata['artifact_type'] == 'DetectedTracks':
-            print('✅ PASS: Metadata access successful')
-        else:
-            print('❌ FAIL: Metadata access failed')
+        print("PASS: Read-only path access successful")
+
+        metadata = api.get_artifact_metadata("DetectedTracks", "test_consumer")
+        if not metadata or metadata.get("artifact_type") != "DetectedTracks":
+            print("FAIL: Metadata access failed")
             return False
-            
+        print("PASS: Metadata access successful")
     except Exception as e:
-        print(f'❌ FAIL: API access failed - {e}')
+        print(f"FAIL: API access failed - {e}")
         return False
-    
-    # Test 4: Audit trail logging
+
     print()
-    print('🧪 Testing: Audit trail logging')
+    print("Testing: Audit trail logging")
     try:
-        # Check if access was logged
-        logs = get_access_logs(consumer_id='test_consumer')
-        if len(logs) >= 2:  # Should have path and metadata access
-            print('✅ PASS: Audit trail logging working')
-        else:
-            print('❌ FAIL: Audit trail logging failed')
+        logs = get_access_logs(consumer_id="test_consumer")
+        if len(logs) < 2:
+            print("FAIL: Audit trail logging failed")
             return False
-            
+        print("PASS: Audit trail logging working")
     except Exception as e:
-        print(f'❌ FAIL: Audit trail test failed - {e}')
+        print(f"FAIL: Audit trail test failed - {e}")
         return False
-    
-    # Test 5: Registry immutability
+
     print()
-    print('🧪 Testing: Registry immutability')
+    print("Testing: Registry immutability")
     try:
-        # Try to register duplicate artifact (should fail)
         record2 = ArtifactRecord(
-            artifact_type='DetectedTracks',
-            path='/tmp/duplicate_tracks.json',
-            produced_by_phase='phase3a_detect',
-            timestamp='2024-01-01T00:00:00Z'
+            artifact_type="DetectedTracks",
+            path="/tmp/duplicate_tracks.json",
+            produced_by_phase="phase3a_detect",
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
         )
-        
         try:
             registry.register(record2)
-            print('❌ FAIL: Registry allowed duplicate (should be immutable)')
+            print("FAIL: Registry allowed duplicate (should be immutable)")
             return False
         except RuntimeError:
-            print('✅ PASS: Registry correctly prevented duplicate')
-            
+            print("PASS: Registry correctly prevented duplicate")
     except Exception as e:
-        print(f'❌ FAIL: Registry immutability test failed - {e}')
+        print(f"FAIL: Registry immutability test failed - {e}")
         return False
-    
-    # Cleanup
-    try:
-        Path(test_file_path).unlink(missing_ok=True)
-    except:
-        pass
-    
+    finally:
+        try:
+            Path(test_file_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
     print()
-    print('🔥 INTEGRATION SHIM TEST COMPLETE')
-    print('✅ All components working correctly')
-    print('✅ Read-only access enforced')
-    print('✅ Audit trail complete')
-    print('✅ Ready for System 2 integration')
-    
+    print("INTEGRATION SHIM TEST COMPLETE")
+    print("PASS: Ready for System 2 integration")
     return True
 
 
 if __name__ == "__main__":
-    success = test_integration_shim()
-    sys.exit(0 if success else 1)
+    raise SystemExit(0 if test_integration_shim() else 1)
+

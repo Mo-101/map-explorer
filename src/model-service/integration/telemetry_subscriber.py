@@ -36,6 +36,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+try:
+    from .artifact_registry import ArtifactRecord  # type: ignore
+except ImportError:
+    from artifact_registry import ArtifactRecord  # type: ignore
+
 
 class TelemetrySubscriber:
     """
@@ -165,7 +170,6 @@ class TelemetrySubscriber:
             return
         
         # Create artifact record
-        from .artifact_registry import ArtifactRecord
         record = ArtifactRecord(
             artifact_type=artifact_type,
             path=artifact_path,
