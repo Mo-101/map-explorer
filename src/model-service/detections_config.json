@@ -1,0 +1,30 @@
+{
+  "model": {
+    "name": "GraphCast",
+    "cycles_utc": [0, 6, 12, 18],
+    "step_hours": 6,
+    "horizon_hours": 240,
+    "grid_deg": 0.25
+  },
+  "gating": {
+    "confidence_candidate_min": 0.5,
+    "confidence_confirmed_min": 0.7,
+    "persistence_steps": 2,
+    "persistence_window_seconds": 21600
+  },
+  "thresholds": {
+    "cyclone": {
+      "confirmed_min_wind_kt": 34,
+      "severe_min_wind_kt": 64
+    },
+    "flood": {
+      "confirmed_min_risk_score": 0.7
+    },
+    "landslide": {
+      "confirmed_min_risk_score": 0.7
+    },
+    "convergence": {
+      "confirmed_min_risk_multiplier": 1.5
+    }
+  }
+}

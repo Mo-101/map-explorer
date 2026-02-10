@@ -5,11 +5,51 @@ import MapControls from "@/components/MapControls";
 import WeatherControls from "@/components/WeatherControls";
 import BackendStatusBadge from "@/components/BackendStatusBadge";
 import { MoScriptsTest } from "@/components/MoScriptsTest";
-import { TooltipTest } from "@/components/TooltipTest";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
 import { orchestrator, emit } from "@/moscripts";
 import { mo_THREAT_RENDERER } from "@/moscripts";
 import { fetchRealtimeThreats } from "@/services/hazardsApi";
+
+type ThreatLike = Record<string, any>;
+
+function normalizeThreats(data: any): ThreatLike[] {
+  if (!data) return [];
+
+  const list: ThreatLike[] = Array.isArray(data.threats)
+    ? data.threats
+    : [
+        ...(Array.isArray(data.cyclones)
+          ? data.cyclones.map((t: ThreatLike) => ({ ...t, type: t.type ?? "cyclone" }))
+          : []),
+        ...(Array.isArray(data.floods)
+          ? data.floods.map((t: ThreatLike) => ({ ...t, type: t.type ?? "flood" }))
+          : []),
+        ...(Array.isArray(data.landslides)
+          ? data.landslides.map((t: ThreatLike) => ({ ...t, type: t.type ?? "landslide" }))
+          : []),
+        ...(Array.isArray(data.convergences)
+          ? data.convergences.map((t: ThreatLike) => ({ ...t, type: t.type ?? "convergence" }))
+          : []),
+      ];
+
+  return list
+    .map((t, idx) => {
+      const lat = Number(t.center_lat ?? t.latitude ?? t.lat);
+      const lng = Number(t.center_lng ?? t.center_lon ?? t.longitude ?? t.lng ?? t.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+      const threatType = String(t.threat_type ?? t.type ?? t.disaster_type ?? "unknown").toLowerCase();
+
+      return {
+        ...t,
+        id: t.id ?? `th-${idx}`,
+        threat_type: threatType,
+        center_lat: lat,
+        center_lng: lng,
+      };
+    })
+    .filter(Boolean) as ThreatLike[];
+}
 
 const Index = () => {
   const [zoom, setZoom] = useState(2);
@@ -43,10 +83,11 @@ const Index = () => {
     async function loadThreats() {
       try {
         const data = await fetchRealtimeThreats();
+        const threats = normalizeThreats(data);
         
         // 🔥 TRIGGER MOSCRIPT via event
         await emit('onThreatsUpdate', {
-          threats: data?.threats || data?.cyclones || data?.floods || data?.landslides || [],
+          threats,
           mapInstance
         });
       } catch (error) {
@@ -71,7 +112,6 @@ const Index = () => {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-background">
-      <TooltipTest />
       <MoScriptsTest />
       <MapView
         onZoomChange={setZoom}

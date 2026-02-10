@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone
 from math import radians, sin, cos, sqrt, atan2
 import json
@@ -37,6 +37,200 @@ if os.getenv("WEBSITE_SITE_NAME") is None:
 
 # Global background task for GraphCast ingestion
 _graphcast_task: Optional[asyncio.Task] = None
+
+# In-memory persistence for "confirmed" detections.
+# Keyed by a stable geo-key so detections don't disappear due to ID churn.
+_threat_persistence: Dict[str, Dict[str, Any]] = {}
+
+
+def _load_detections_config() -> Dict[str, Any]:
+    """
+    Load realtime detections config from JSON.
+    No YAML dependency on purpose (keep deployment light).
+    """
+    cfg_path = os.getenv("DETECTIONS_CONFIG_PATH") or os.path.join(os.path.dirname(__file__), "detections_config.json")
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception:
+        cfg = {}
+
+    gating = cfg.get("gating") or {}
+    thresholds = cfg.get("thresholds") or {}
+
+    def _env_float(name: str, default: float) -> float:
+        raw = os.getenv(name)
+        try:
+            return float(raw) if raw is not None and str(raw).strip() != "" else default
+        except Exception:
+            return default
+
+    def _env_int(name: str, default: int) -> int:
+        raw = os.getenv(name)
+        try:
+            return int(raw) if raw is not None and str(raw).strip() != "" else default
+        except Exception:
+            return default
+
+    # Env overrides let you sharpen/relax without code changes.
+    gating["confidence_candidate_min"] = _env_float("DETECTIONS_CONFIDENCE_CANDIDATE_MIN", float(gating.get("confidence_candidate_min", 0.5)))
+    gating["confidence_confirmed_min"] = _env_float("DETECTIONS_CONFIDENCE_CONFIRMED_MIN", float(gating.get("confidence_confirmed_min", 0.7)))
+    gating["persistence_steps"] = _env_int("DETECTIONS_PERSISTENCE_STEPS", int(gating.get("persistence_steps", 2)))
+    gating["persistence_window_seconds"] = _env_int("DETECTIONS_PERSISTENCE_WINDOW_SECONDS", int(gating.get("persistence_window_seconds", 21600)))
+
+    cfg["gating"] = gating
+    cfg["thresholds"] = thresholds
+    return cfg
+
+
+def _as_float(v: Any) -> Optional[float]:
+    try:
+        if v is None:
+            return None
+        if isinstance(v, bool):
+            return None
+        return float(v)
+    except Exception:
+        return None
+
+
+def _wind_kmh_to_kt(kmh: float) -> float:
+    return kmh / 1.852
+
+
+def _stable_geo_key(threat_type: str, lat: float, lng: float) -> str:
+    return f"{threat_type}:{round(lat, 2)}:{round(lng, 2)}"
+
+
+def _normalize_to_threats(anomalies: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Convert the mixed anomaly payload (cyclones/floods/...) into a single list of Threat-like dicts.
+    """
+    out: List[Dict[str, Any]] = []
+
+    def push(kind: str, items: Any):
+        if not isinstance(items, list):
+            return
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            t_type = str(item.get("threat_type") or item.get("type") or item.get("disaster_type") or kind)
+            lat = _as_float(item.get("center_lat") or item.get("latitude") or item.get("lat"))
+            lng = _as_float(item.get("center_lng") or item.get("center_lon") or item.get("longitude") or item.get("lng") or item.get("lon"))
+            if lat is None or lng is None:
+                continue
+
+            # Prefer an explicit confidence; fall back to detection_confidence if present.
+            conf = _as_float(item.get("confidence"))
+            if conf is None:
+                conf = _as_float(item.get("detection_confidence"))
+
+            # Normalize cyclone wind to knots when possible.
+            wind_kt = _as_float(item.get("max_wind_kt"))
+            if wind_kt is None:
+                wind_kmh = _as_float(item.get("max_wind_speed"))
+                if wind_kmh is not None:
+                    wind_kt = _wind_kmh_to_kt(wind_kmh)
+
+            risk_score = _as_float(item.get("risk_score"))
+            risk_multiplier = _as_float(item.get("risk_multiplier"))
+
+            geo_key = _stable_geo_key(t_type, lat, lng)
+            threat_id = str(item.get("id") or geo_key)
+
+            out.append(
+                {
+                    "id": threat_id,
+                    "threat_type": t_type,
+                    "center_lat": lat,
+                    "center_lng": lng,
+                    "confidence": conf,
+                    "severity": item.get("severity"),
+                    "timestamp": item.get("timestamp") or item.get("created_at") or anomalies.get("timestamp"),
+                    "lead_time_hours": item.get("lead_time_hours"),
+                    "max_wind_kt": wind_kt,
+                    "risk_score": risk_score,
+                    "risk_multiplier": risk_multiplier,
+                    "detection_details": item.get("detection_details") or item,
+                    "_geo_key": geo_key,
+                }
+            )
+
+    push("cyclone", anomalies.get("cyclones"))
+    push("flood", anomalies.get("floods"))
+    push("landslide", anomalies.get("landslides"))
+    push("convergence", anomalies.get("convergences"))
+
+    return out
+
+
+def _is_confirmed(threat: Dict[str, Any], cfg: Dict[str, Any]) -> bool:
+    gating = cfg.get("gating") or {}
+    thresholds = cfg.get("thresholds") or {}
+
+    conf_min = float(gating.get("confidence_confirmed_min", 0.7))
+    conf = _as_float(threat.get("confidence"))
+    if conf is not None and conf < conf_min:
+        return False
+
+    t = str(threat.get("threat_type") or "").lower()
+    if t == "cyclone":
+        wind_kt = _as_float(threat.get("max_wind_kt")) or 0.0
+        min_wind = float((thresholds.get("cyclone") or {}).get("confirmed_min_wind_kt", 34))
+        return wind_kt >= min_wind
+
+    if t == "flood":
+        rs = _as_float(threat.get("risk_score"))
+        if rs is None:
+            # If a backend doesn't compute risk_score, accept based on confidence alone.
+            return True
+        return rs >= float((thresholds.get("flood") or {}).get("confirmed_min_risk_score", 0.7))
+
+    if t == "landslide":
+        rs = _as_float(threat.get("risk_score"))
+        if rs is None:
+            return True
+        return rs >= float((thresholds.get("landslide") or {}).get("confirmed_min_risk_score", 0.7))
+
+    if t == "convergence":
+        rm = _as_float(threat.get("risk_multiplier"))
+        if rm is None:
+            return True
+        return rm >= float((thresholds.get("convergence") or {}).get("confirmed_min_risk_multiplier", 1.5))
+
+    # Unknown types are not confirmed by default.
+    return False
+
+
+def _apply_persistence(threats: List[Dict[str, Any]], cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    gating = cfg.get("gating") or {}
+    steps_required = int(gating.get("persistence_steps", 2))
+    window_s = int(gating.get("persistence_window_seconds", 21600))
+    now = time.time()
+
+    # prune stale entries
+    stale_cutoff = now - window_s
+    for k in list(_threat_persistence.keys()):
+        if float(_threat_persistence[k].get("last_seen", 0)) < stale_cutoff:
+            _threat_persistence.pop(k, None)
+
+    confirmed: List[Dict[str, Any]] = []
+    for th in threats:
+        geo_key = str(th.get("_geo_key") or _stable_geo_key(str(th.get("threat_type")), float(th.get("center_lat")), float(th.get("center_lng"))))
+        state = _threat_persistence.get(geo_key)
+
+        if state is None or float(state.get("last_seen", 0)) < stale_cutoff:
+            state = {"count": 0, "last_seen": now}
+
+        state["count"] = int(state.get("count", 0)) + 1
+        state["last_seen"] = now
+        _threat_persistence[geo_key] = state
+
+        if steps_required <= 1 or state["count"] >= steps_required:
+            confirmed.append({k: v for k, v in th.items() if k != "_geo_key"})
+
+    return confirmed
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -999,8 +1193,9 @@ def ai_analyze(req: AiAnalyzeRequest):
 
 
 @app.get("/api/v1/weather/anomalies")
-async def get_weather_anomalies():
+async def get_weather_anomalies(include_candidates: bool = False):
     """Detect cyclones, floods, landslides from GraphCast data using MoScripts"""
+    cfg = _load_detections_config()
     if MOSCRIPTS_AVAILABLE:
         # Use MoScripts for intelligent detection with voice lines
         try:
@@ -1020,6 +1215,17 @@ async def get_weather_anomalies():
             
             # Use MoScripts for detection with voice lines
             result = detect_weather_anomalies(mock_graphcast_data)
+
+            raw_threats = _normalize_to_threats(result)
+            candidate_min = float((cfg.get("gating") or {}).get("confidence_candidate_min", 0.5))
+            candidates = [
+                {**t, "status": "candidate"}
+                for t in raw_threats
+                if _as_float(t.get("confidence")) is None or float(_as_float(t.get("confidence")) or 0.0) >= candidate_min
+            ]
+            candidates_out = [{k: v for k, v in t.items() if k != "_geo_key"} for t in candidates]
+            confirmed_now = [{**t, "status": "confirmed"} for t in candidates if _is_confirmed(t, cfg)]
+            confirmed = _apply_persistence(confirmed_now, cfg)
             
             return {
                 "timestamp": result['timestamp'],
@@ -1027,9 +1233,11 @@ async def get_weather_anomalies():
                 "floods": result['floods'],
                 "landslides": result['landslides'],
                 "convergences": result['convergences'],
+                "threats": candidates_out if include_candidates else confirmed,
                 "total_hazards": result['total_hazards'],
                 "detection_time": result['detection_time'],
                 "moscripts_enabled": True,
+                "detections_config": cfg.get("gating"),
                 "intelligence_system": "MoScripts Backend v1.0"
             }
         except Exception as e:
@@ -1058,17 +1266,37 @@ async def get_weather_anomalies():
             }
             
             results = detector.detect_all_hazards(sample_graphcast_data)
+
+            raw = {
+                "timestamp": datetime.now().isoformat(),
+                "cyclones": results.get("cyclones", []),
+                "floods": results.get("floods", []),
+                "landslides": results.get("landslides", []),
+                "convergences": results.get("convergences", []),
+            }
+            raw_threats = _normalize_to_threats(raw)
+            candidate_min = float((cfg.get("gating") or {}).get("confidence_candidate_min", 0.5))
+            candidates = [
+                {**t, "status": "candidate"}
+                for t in raw_threats
+                if _as_float(t.get("confidence")) is None or float(_as_float(t.get("confidence")) or 0.0) >= candidate_min
+            ]
+            candidates_out = [{k: v for k, v in t.items() if k != "_geo_key"} for t in candidates]
+            confirmed_now = [{**t, "status": "confirmed"} for t in candidates if _is_confirmed(t, cfg)]
+            confirmed = _apply_persistence(confirmed_now, cfg)
             
             return {
-                "timestamp": datetime.now().isoformat(),
-                "cyclones": results['cyclones'],
-                "floods": results['floods'],
-                "landslides": results['landslides'],
-                "convergences": results['convergences'],
-                "total_hazards": len(results['cyclones']) + len(results['floods']) + len(results['landslides']),
-                "convergence_zones": len(results['convergences']),
+                "timestamp": raw["timestamp"],
+                "cyclones": raw["cyclones"],
+                "floods": raw["floods"],
+                "landslides": raw["landslides"],
+                "convergences": raw["convergences"],
+                "threats": candidates_out if include_candidates else confirmed,
+                "total_hazards": len(raw["cyclones"]) + len(raw["floods"]) + len(raw["landslides"]),
+                "convergence_zones": len(raw["convergences"]),
                 "detection_confidence": "high" if len(results['convergences']) > 0 else "moderate",
                 "moscripts_enabled": False,
+                "detections_config": cfg.get("gating"),
                 "intelligence_system": "Legacy Weather Detection"
             }
             
