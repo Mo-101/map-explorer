@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Situational Analysis (Not an Alert)</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        
+        .analysis-panel {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .panel-header {
+            background: #f8f9fa;
+            padding: 20px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .panel-title {
+            margin: 0 0 10px 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        .mode-badge {
+            display: inline-block;
+            background: #007bff;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        
+        .panel-content {
+            padding: 20px;
+        }
+        
+        .analysis-item {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 4px solid #6c757d;
+        }
+        
+        .analysis-module {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 8px;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .analysis-text {
+            line-height: 1.5;
+            color: #212529;
+            margin-bottom: 10px;
+        }
+        
+        .analysis-meta {
+            font-size: 12px;
+            color: #6c757d;
+            display: flex;
+            gap: 15px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #dc3545;
+        }
+        
+        .timestamp {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 10px;
+        }
+        
+        .artifacts {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e9ecef;
+        }
+        
+        .artifact-list {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .artifact-tag {
+            background: #e9ecef;
+            color: #495057;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-family: monospace;
+        }
+        
+        .refresh-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+        
+        .refresh-btn:hover {
+            background: #0056b3;
+        }
+        
+        .refresh-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="analysis-panel">
+        <div class="panel-header">
+            <h1 class="panel-title">Situational Analysis (Not an Alert)</h1>
+            <span class="mode-badge">ANALYSIS ONLY</span>
+        </div>
+        
+        <div class="panel-content">
+            <button class="refresh-btn" onclick="refreshAnalysis()">Refresh Analysis</button>
+            
+            <div id="analysis-content">
+                <div class="loading">Loading analysis...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentAnalysis = null;
+        
+        async function fetchAnalysis() {
+            try {
+                const response = await fetch('/api/analysis');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    currentAnalysis = data;
+                    renderAnalysis(data);
+                } else {
+                    renderError('Failed to fetch analysis');
+                }
+            } catch (error) {
+                console.error('Error fetching analysis:', error);
+                renderError('Network error');
+            }
+        }
+        
+        function renderAnalysis(data) {
+            const container = document.getElementById('analysis-content');
+            
+            if (!data.analysis || data.analysis.length === 0) {
+                container.innerHTML = `
+                    <div class="analysis-item">
+                        <div class="analysis-text">No analysis available at this time.</div>
+                        <div class="timestamp">Last updated: ${formatTimestamp(data.timestamp)}</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            const analysisHtml = data.analysis.map(item => `
+                <div class="analysis-item">
+                    <div class="analysis-module">${item.module}</div>
+                    <div class="analysis-text">${escapeHtml(item.text)}</div>
+                    <div class="analysis-meta">
+                        <span>Module: ${item.module}</span>
+                        <span>Updated: ${formatTimestamp(item.timestamp)}</span>
+                    </div>
+                </div>
+            `).join('');
+            
+            const artifactsHtml = data.artifacts_used && data.artifacts_used.length > 0 ? `
+                <div class="artifacts">
+                    <div style="font-size: 12px; color: #6c757d; margin-bottom: 8px;">Data Sources:</div>
+                    <div class="artifact-list">
+                        ${data.artifacts_used.map(artifact => 
+                            `<span class="artifact-tag">${artifact}</span>`
+                        ).join('')}
+                    </div>
+                </div>
+            ` : '';
+            
+            container.innerHTML = `
+                ${analysisHtml}
+                ${artifactsHtml}
+                <div class="timestamp">
+                    Analysis generated: ${formatTimestamp(data.timestamp)} | 
+                    System Mode: ${data.metadata?.system_mode || 'analysis'} | 
+                    Provenance: ${data.metadata?.provenance || 'System 2'}
+                </div>
+            `;
+        }
+        
+        function renderError(message) {
+            const container = document.getElementById('analysis-content');
+            container.innerHTML = `
+                <div class="error">
+                    <strong>Analysis Unavailable</strong><br>
+                    ${message}<br>
+                    <small>Please try again later.</small>
+                </div>
+            `;
+        }
+        
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'Unknown';
+            try {
+                const date = new Date(timestamp);
+                return date.toLocaleString();
+            } catch {
+                return timestamp;
+            }
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        async function refreshAnalysis() {
+            const btn = document.querySelector('.refresh-btn');
+            btn.disabled = true;
+            btn.textContent = 'Refreshing...';
+            
+            await fetchAnalysis();
+            
+            btn.disabled = false;
+            btn.textContent = 'Refresh Analysis';
+        }
+        
+        // Auto-refresh every 5 minutes
+        setInterval(fetchAnalysis, 5 * 60 * 1000);
+        
+        // Initial load
+        fetchAnalysis();
+    </script>
+</body>
+</html>

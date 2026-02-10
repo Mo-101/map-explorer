@@ -4,6 +4,7 @@ import MapView from "@/components/MapView";
 import MapControls from "@/components/MapControls";
 import WeatherControls from "@/components/WeatherControls";
 import BackendStatusBadge from "@/components/BackendStatusBadge";
+import MoScriptsAnalysisPanel from "@/components/MoScriptsAnalysisPanel";
 import { MoScriptsTest } from "@/components/MoScriptsTest";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
 import { orchestrator, emit } from "@/moscripts";
@@ -82,14 +83,17 @@ const Index = () => {
 
     async function loadThreats() {
       try {
-        const data = await fetchRealtimeThreats();
-        const threats = normalizeThreats(data);
+        // 🔥 PAUSED: Backend not running in Analysis Mode
+        // const data = await fetchRealtimeThreats();
+        // const threats = normalizeThreats(data);
         
-        // 🔥 TRIGGER MOSCRIPT via event
-        await emit('onThreatsUpdate', {
-          threats,
-          mapInstance
-        });
+        // 🔥 TRIGGER MOSCRIPT via event (when backend available)
+        // await emit('onThreatsUpdate', {
+        //   threats,
+        //   mapInstance
+        // });
+        
+        console.log('🧠 Analysis Mode: Backend temporarily paused');
       } catch (error) {
         console.error('❌ Index: Failed to load threats:', error);
       }
@@ -98,9 +102,9 @@ const Index = () => {
     // Initial load
     loadThreats();
     
-    // Poll every 30 seconds
-    const interval = setInterval(loadThreats, 30000);
-    return () => clearInterval(interval);
+    // 🔥 PAUSED: Polling disabled in Analysis Mode
+    // const interval = setInterval(loadThreats, 30000);
+    // return () => clearInterval(interval);
   }, [mapInstance]);
 
   const handleMapReady = useCallback((map: maptilersdk.Map) => {
@@ -112,7 +116,7 @@ const Index = () => {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-background">
-      <MoScriptsTest />
+      <MoScriptsAnalysisPanel />
       <MapView
         onZoomChange={setZoom}
         onCenterChange={(lng, lat) => setCoordinates({ lng, lat })}

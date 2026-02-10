@@ -3,10 +3,16 @@ import { useEffect, useState } from "react";
 type Status = {
   ok: boolean;
   health?: any;
-  threatsCount?: number;
   error?: string;
   checkedAt: string;
 };
+
+function getAnalysisApiBaseUrl() {
+  const raw = ((import.meta as any).env?.VITE_ANALYSIS_API_BASE_URL as string | undefined) || "";
+  const cleaned = raw.replace(/['"]/g, "").replace(/\/$/, "");
+  if (cleaned) return cleaned;
+  return import.meta.env.DEV ? "http://localhost:5001" : "";
+}
 
 export default function BackendStatusBadge() {
   const [status, setStatus] = useState<Status>({ ok: false, checkedAt: new Date().toISOString() });
@@ -15,26 +21,31 @@ export default function BackendStatusBadge() {
     let cancelled = false;
 
     const check = async () => {
-      const base = ((import.meta.env.VITE_API_BASE_URL as string | undefined) || "")
-        .replace(/['"]/g, "")
-        .replace(/\/$/, "");
       try {
-        const [healthRes, threatsRes] = await Promise.all([
-          fetch(`${base}/api/v1/health`, { headers: { Accept: "application/json" }, cache: "no-store" }),
-          fetch(`${base}/api/v1/threats?limit=1`, { headers: { Accept: "application/json" }, cache: "no-store" }),
-        ]);
+        const base = getAnalysisApiBaseUrl();
+        const healthRes = await fetch(`${base}/api/health`, {
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
 
-        const healthJson = healthRes.ok ? await healthRes.json() : null;
-        const threatsJson = threatsRes.ok ? await threatsRes.json() : null;
+        const healthJson = await healthRes.json().catch(() => null);
 
         if (cancelled) return;
 
-        setStatus({
-          ok: Boolean(healthRes.ok && threatsRes.ok),
-          health: healthJson,
-          threatsCount: typeof threatsJson?.count === "number" ? threatsJson.count : undefined,
-          checkedAt: new Date().toISOString(),
-        });
+        if (!healthRes.ok) {
+          setStatus({
+            ok: false,
+            health: healthJson,
+            error: `Health check failed: ${healthRes.status}`,
+            checkedAt: new Date().toISOString(),
+          });
+        } else {
+          setStatus({
+            ok: true,
+            health: healthJson,
+            checkedAt: new Date().toISOString(),
+          });
+        }
       } catch (e: any) {
         if (cancelled) return;
         setStatus({
@@ -56,13 +67,13 @@ export default function BackendStatusBadge() {
     };
   }, []);
 
-  const label = status.ok ? "BACKEND OK" : "BACKEND DOWN";
+  const label = status.ok ? "ANALYSIS OK" : "ANALYSIS DOWN";
   const details = status.ok
-    ? `threats: ${status.threatsCount ?? "?"}`
+    ? `mode: ${status.health?.system_mode || "analysis"}`
     : status.error
       ? status.error
-      : status.health?.db
-        ? `db: ${status.health.db}`
+      : status.health?.status
+        ? `status: ${status.health.status}`
         : "unreachable";
 
   return (
