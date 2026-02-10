@@ -198,6 +198,17 @@ def run_complete_validation(features: Dict[str, Any],
     Returns:
         Complete validation results
     """
+    # CRITICAL GUARDRAIL: Validate data source
+    if "metadata" in features:
+        model_source = features["metadata"].get("model", "unknown")
+        if model_source != "WeatherNext2":
+            raise RuntimeError(
+                f"🚨 PHASE 4 VALIDATION REQUIRES REAL WEATHERNEXT DATA!\n"
+                f"Current model source: {model_source}\n"
+                f"Phase 4 validation cannot proceed with synthetic or non-WeatherNext data.\n"
+                f"This guardrail prevents accidental validation against wrong data sources."
+            )
+    
     if validation_period is None:
         validation_period = {
             "start": "2024-01-01",
@@ -208,6 +219,7 @@ def run_complete_validation(features: Dict[str, Any],
     print("=" * 60)
     print(f"📅 Validation Period: {validation_period['start']} to {validation_period['end']}")
     print(f"📁 IBTrACS Path: {ibtracs_path}")
+    print("🔒 GUARDRAIL: Real WeatherNext data validation ONLY")
     print("=" * 60)
     
     # Initialize orchestrator
@@ -240,6 +252,18 @@ def run_complete_validation(features: Dict[str, Any],
     
     assessment = results["metrics"]["performance_assessment"]["overall_assessment"]
     print(f"  Overall Assessment: {assessment}")
+    
+    # CRITICAL GUARDRAIL: Prevent downstream hazard logic until validation passes
+    if assessment != "GOOD":
+        print("\n🚨 CRITICAL GUARDRAIL:")
+        print("  Validation did not meet performance targets!")
+        print("  DO NOT proceed to Phase 3B (floods) or Phase 3C (convergence)")
+        print("  Address validation issues first before downstream hazard logic.")
+        print("  This prevents building hazard detection on unvalidated cyclone foundation.")
+    else:
+        print("\n✅ VALIDATION PASSED:")
+        print("  Cyclone detection is scientifically validated!")
+        print("  Ready to proceed to downstream hazard logic (Phase 3B/3C).")
     
     return results
 

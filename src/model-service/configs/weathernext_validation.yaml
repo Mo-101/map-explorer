@@ -1,0 +1,142 @@
+# WeatherNext Validation Configuration
+# ==================================
+# First validation run: Aug-Sep 2024 window
+# Ready for immediate execution when EAP access is approved
+
+# ==================================
+# FORECAST INITIALIZATION TIMES
+# ==================================
+# Multiple initialization times to capture different storms
+# 6-hourly spacing, 3 dates = 9 initialization times
+forecast_init_times:
+  - "2024-08-01T00:00:00Z"  # Peak Atlantic season
+  - "2024-08-07T00:00:00Z"  # Mid-month
+  - "2024-08-13T00:00:00Z"  # Late month
+
+# ==================================
+# FORECAST HORIZON
+# ==================================
+horizon_hrs: 120  # 5 days - sufficient for cyclone lifecycle
+
+# ==================================
+# TEMPORAL RESOLUTION
+# ==================================
+temporal_resolution_hrs: 6  # 6-hourly - matches IBTrACS
+
+# ==================================
+# ENSEMBLE CONFIGURATION
+# ==================================
+num_ensembles: 16  # Minimum for robust detection
+ensemble_selection: "mean"  # Use ensemble mean for detection
+
+# ==================================
+# SPATIAL CONFIGURATION
+# ==================================
+region:
+  type: "global"  # Global coverage for all basins
+  lat_min: -90.0
+  lat_max: 90.0
+  lon_min: -180.0
+  lon_max: 180.0
+
+# ==================================
+# OUTPUT CONFIGURATION
+# ==================================
+output:
+  format: "zarr"
+  compression: "gzip"
+  chunking:
+    time: 4
+    lat: 181
+    lon: 360
+    level: 13
+  
+  # GCS bucket (to be filled when access approved)
+  bucket: "gs://[YOUR-BUCKET]/weathernext-validation/"
+  
+  # Local fallback for testing
+  local_path: "data/weathernext/validation/"
+
+# ==================================
+# VARIABLES REQUIRED
+# ==================================
+required_variables:
+  # 10m winds for cyclone detection
+  - "u10"
+  - "v10"
+  
+  # Mean sea level pressure for structure
+  - "msl"
+  
+  # 6-hourly precipitation for hydrology
+  - "tp6"
+  
+  # Optional: Pressure level winds for vertical structure
+  pressure_level_winds:
+    - "u"
+    - "v"
+    levels: [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100, 50]
+
+# ==================================
+# VALIDATION METADATA
+# ==================================
+validation:
+  period:
+    start: "2024-08-01T00:00:00Z"
+    end: "2024-09-30T23:59:59Z"
+  
+  ibtracs_file: "data/ibtracs/IBTrACS.ALL.v04r01.nc"
+  
+  expected_storms: ~40  # Based on IBTrACS analysis
+  
+  performance_targets:
+    recall_min: 0.60  # 60% minimum
+    recall_max: 0.80  # 80% maximum
+    position_error_max_km: 300.0
+    false_alarm_rate_max: 0.50
+
+# ==================================
+# EXECUTION NOTES
+# ==================================
+execution_notes:
+  priority: "HIGH"  # First validation experiment
+  estimated_runtime_hours: 2-4  # WeatherNext inference time
+  estimated_cost_usd: "~50-100"  # Rough estimate
+  
+  # Critical path for execution
+  critical_path:
+    1. "Submit WeatherNext batch jobs"
+    2. "Wait for completion (2-4 hours)"
+    3. "Download Zarr outputs locally"
+    4. "Run Phase 1-3 pipeline"
+    5. "Execute Phase 4 validation"
+    6. "Generate metrics table"
+
+# ==================================
+# QUALITY CHECKS
+# ==================================
+quality_checks:
+  # Verify output format matches expectations
+  verify_dimensions: true
+  verify_variables: true
+  verify_time_coverage: true
+  
+  # Minimum data quality thresholds
+  min_data_completeness: 0.95  # 95% of expected data points
+  max_missing_values: 0.05  # 5% missing values allowed
+
+# ==================================
+# CONTINGENCY PLANS
+# ==================================
+contingency:
+  if_job_fails:
+    action: "Reduce ensemble size to 8"
+    reason: "Lower cost, faster iteration"
+  
+  if_data_missing:
+    action: "Extend validation window by 2 weeks"
+    reason: "Capture more storms"
+  
+  if_validation_fails:
+    action: "Debug with single initialization time"
+    reason: "Isolate problem source"
