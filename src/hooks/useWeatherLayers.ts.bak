@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type * as maptilersdk from "@maptiler/sdk";
+import { WindArrowLayer } from '@maptiler/weather-plus';
 import {
   WindLayer,
   PrecipitationLayer,
@@ -22,7 +23,7 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
     precipitation: { layer: null, value: "value", units: " mm" },
     pressure: { layer: null, value: "value", units: " hPa" },
     radar: { layer: null, value: "value", units: " dBZ" },
-    temperature: { layer: null, value: "value", units: "°" },
+    temperature: { layer: null, value: "value", units: "ï¿½" },
     wind: { layer: null, value: "speedMetersPerSecond", units: " m/s" },
   });
 

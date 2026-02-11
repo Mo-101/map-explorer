@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import type * as maptilersdk from "@maptiler/sdk";
+
 import MapView from "@/components/MapView";
 import MapControls from "@/components/MapControls";
 import WeatherControls from "@/components/WeatherControls";
