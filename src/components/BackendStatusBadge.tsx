@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { fetchBackendHealth } from "@/services/hazardsApi";
 
 type Status = {
   ok: boolean;
@@ -6,13 +7,6 @@ type Status = {
   error?: string;
   checkedAt: string;
 };
-
-function getAnalysisApiBaseUrl() {
-  const raw = ((import.meta as any).env?.VITE_ANALYSIS_API_BASE_URL as string | undefined) || "";
-  const cleaned = raw.replace(/['"]/g, "").replace(/\/$/, "");
-  if (cleaned) return cleaned;
-  return import.meta.env.DEV ? "http://localhost:5001" : "";
-}
 
 export default function BackendStatusBadge() {
   const [status, setStatus] = useState<Status>({ ok: false, checkedAt: new Date().toISOString() });
@@ -22,30 +16,14 @@ export default function BackendStatusBadge() {
 
     const check = async () => {
       try {
-        const base = getAnalysisApiBaseUrl();
-        const healthRes = await fetch(`${base}/api/health`, {
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        });
-
-        const healthJson = await healthRes.json().catch(() => null);
-
+        const healthJson = await fetchBackendHealth();
         if (cancelled) return;
 
-        if (!healthRes.ok) {
-          setStatus({
-            ok: false,
-            health: healthJson,
-            error: `Health check failed: ${healthRes.status}`,
-            checkedAt: new Date().toISOString(),
-          });
-        } else {
-          setStatus({
-            ok: true,
-            health: healthJson,
-            checkedAt: new Date().toISOString(),
-          });
-        }
+        setStatus({
+          ok: healthJson?.status === "healthy",
+          health: healthJson,
+          checkedAt: new Date().toISOString(),
+        });
       } catch (e: any) {
         if (cancelled) return;
         setStatus({
@@ -57,8 +35,7 @@ export default function BackendStatusBadge() {
     };
 
     check();
-    const pollMsRaw = (import.meta as any).env?.VITE_STATUS_POLL_MS;
-    const pollMs = Math.max(15_000, Number(pollMsRaw || 60_000));
+    const pollMs = 60_000;
     const id = window.setInterval(check, pollMs);
 
     return () => {
@@ -67,14 +44,12 @@ export default function BackendStatusBadge() {
     };
   }, []);
 
-  const label = status.ok ? "ANALYSIS OK" : "ANALYSIS DOWN";
+  const label = status.ok ? "NEON DB OK" : "NEON DB DOWN";
   const details = status.ok
-    ? `mode: ${status.health?.system_mode || "analysis"}`
+    ? `mode: ${status.health?.system_mode || "dev"} | ${status.health?.threats_count ?? 0} threats`
     : status.error
       ? status.error
-      : status.health?.status
-        ? `status: ${status.health.status}`
-        : "unreachable";
+      : "unreachable";
 
   return (
     <div className="absolute top-5 right-5 z-20">
