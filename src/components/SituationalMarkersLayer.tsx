@@ -48,16 +48,19 @@ const SituationalMarkersLayer = ({ map, markers }: Props) => {
     renderedMarkersRef.current = [];
 
     const next = markers.map((m) => {
-      const el = document.createElement("div");
-      el.className = styles.marker;
-
       const size = getMarkerSize(m.status);
-      el.style.width = `${size}px`;
-      el.style.height = `${size}px`;
-      el.style.backgroundColor = getMarkerColor(m.type);
-      el.style.opacity = String(getMarkerOpacity(m.status));
+      const container = document.createElement("div");
+      container.className = styles.markerContainer;
+      container.style.width = `${size}px`;
+      container.style.height = `${size}px`;
+      container.style.backgroundColor = getMarkerColor(m.type);
+      container.style.opacity = String(getMarkerOpacity(m.status));
 
-      const marker = new (maptilersdk as any).Marker({ element: el })
+      const pulse = document.createElement("div");
+      pulse.className = styles.marker;
+      container.appendChild(pulse);
+
+      const marker = new (maptilersdk as any).Marker({ element: container })
         .setLngLat([m.lng, m.lat])
         .addTo(map);
 
