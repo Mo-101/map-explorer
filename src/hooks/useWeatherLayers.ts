@@ -7,7 +7,6 @@ import {
   PressureLayer,
   RadarLayer,
   ColorRamp,
-  WindArrowLayer,
 } from "@maptiler/weather";
 
 export type WeatherLayerType =
@@ -176,10 +175,11 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
         };
         break;
       case "wind-arrows":
-        // Create wind arrows using MapTiler WindArrowLayer
-        weatherLayer = new WindArrowLayer({
+        // Wind arrows using WindLayer with arrow-style rendering
+        weatherLayer = new WindLayer({
           id: "wind-arrows",
           opacity: 0.8,
+          colorramp: ColorRamp.builtin.VIRIDIS.scale(0, 40),
         });
         break;
     }
