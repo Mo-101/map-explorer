@@ -1,12 +1,13 @@
-const API_BASE_RAW = ((import.meta.env.VITE_API_BASE_URL as string | undefined) || "")
-  .replace(/['"]/g, "")
-  .replace(/\/$/, "");
-
-const API_BASE = API_BASE_RAW || (import.meta.env.DEV ? "http://localhost:8001" : "");
+import { supabase } from "@/integrations/supabase/client";
 
 export async function fetchRealtimeThreats() {
-  const url = `${API_BASE}/api/v1/weather/anomalies`;
-  const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
-  if (!res.ok) throw new Error(`Threats fetch failed: ${res.status}`);
-  return res.json();
+  const { data, error } = await supabase.functions.invoke("neon-threats");
+  if (error) throw new Error(`Threats fetch failed: ${error.message}`);
+  return data;
+}
+
+export async function fetchBackendHealth() {
+  const { data, error } = await supabase.functions.invoke("neon-health");
+  if (error) throw new Error(`Health check failed: ${error.message}`);
+  return data;
 }

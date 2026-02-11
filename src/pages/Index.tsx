@@ -5,8 +5,6 @@ import MapView from "@/components/MapView";
 import MapControls from "@/components/MapControls";
 import WeatherControls from "@/components/WeatherControls";
 import BackendStatusBadge from "@/components/BackendStatusBadge";
-import MoScriptsAnalysisPanel from "@/components/MoScriptsAnalysisPanel";
-import { MoScriptsTest } from "@/components/MoScriptsTest";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
 import { orchestrator, emit } from "@/moscripts";
 import { mo_THREAT_RENDERER } from "@/moscripts";
@@ -19,20 +17,7 @@ function normalizeThreats(data: any): ThreatLike[] {
 
   const list: ThreatLike[] = Array.isArray(data.threats)
     ? data.threats
-    : [
-        ...(Array.isArray(data.cyclones)
-          ? data.cyclones.map((t: ThreatLike) => ({ ...t, type: t.type ?? "cyclone" }))
-          : []),
-        ...(Array.isArray(data.floods)
-          ? data.floods.map((t: ThreatLike) => ({ ...t, type: t.type ?? "flood" }))
-          : []),
-        ...(Array.isArray(data.landslides)
-          ? data.landslides.map((t: ThreatLike) => ({ ...t, type: t.type ?? "landslide" }))
-          : []),
-        ...(Array.isArray(data.convergences)
-          ? data.convergences.map((t: ThreatLike) => ({ ...t, type: t.type ?? "convergence" }))
-          : []),
-      ];
+    : [];
 
   return list
     .map((t, idx) => {
@@ -40,7 +25,7 @@ function normalizeThreats(data: any): ThreatLike[] {
       const lng = Number(t.center_lng ?? t.center_lon ?? t.longitude ?? t.lng ?? t.lon);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
 
-      const threatType = String(t.threat_type ?? t.type ?? t.disaster_type ?? "unknown").toLowerCase();
+      const threatType = String(t.threat_type ?? t.type ?? "unknown").toLowerCase();
 
       return {
         ...t,
@@ -62,62 +47,40 @@ const Index = () => {
 
   // Register MoScripts on mount
   useEffect(() => {
-    console.log('🔥 Registering MoScripts...');
-    
-    // Register threat renderer MoScript
     orchestrator.register(mo_THREAT_RENDERER);
-    
-    // Log stats
-    const stats = orchestrator.getStats();
-    console.log('📊 Orchestrator stats:', stats);
-    console.log('📋 Registered scripts:', orchestrator.getRegisteredScripts());
-    
-    return () => {
-      // Cleanup on unmount
-      orchestrator.clear();
-    };
+    return () => { orchestrator.clear(); };
   }, []);
 
-  // Fetch and render threats using MoScripts
+  // Fetch and render threats
   useEffect(() => {
     if (!mapInstance) return;
 
     async function loadThreats() {
       try {
-        // 🔥 PAUSED: Backend not running in Analysis Mode
-        // const data = await fetchRealtimeThreats();
-        // const threats = normalizeThreats(data);
+        const data = await fetchRealtimeThreats();
+        const threats = normalizeThreats(data);
+        console.log(`🌍 Loaded ${threats.length} threats from Neon DB`);
         
-        // 🔥 TRIGGER MOSCRIPT via event (when backend available)
-        // await emit('onThreatsUpdate', {
-        //   threats,
-        //   mapInstance
-        // });
-        
-        console.log('🧠 Analysis Mode: Backend temporarily paused');
+        if (threats.length > 0) {
+          await emit('onThreatsUpdate', { threats, mapInstance });
+        }
       } catch (error) {
-        console.error('❌ Index: Failed to load threats:', error);
+        console.error('❌ Failed to load threats:', error);
       }
     }
 
-    // Initial load
     loadThreats();
-    
-    // 🔥 PAUSED: Polling disabled in Analysis Mode
-    // const interval = setInterval(loadThreats, 30000);
-    // return () => clearInterval(interval);
+    const interval = setInterval(loadThreats, 30000);
+    return () => clearInterval(interval);
   }, [mapInstance]);
 
   const handleMapReady = useCallback((map: maptilersdk.Map) => {
     setMapInstance(map);
-    
-    // 🔥 TRIGGER MOSCRIPT via event when map loads
     emit('onMapLoad', { mapInstance: map });
   }, []);
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-background">
-      <MoScriptsAnalysisPanel />
       <MapView
         onZoomChange={setZoom}
         onCenterChange={(lng, lat) => setCoordinates({ lng, lat })}
