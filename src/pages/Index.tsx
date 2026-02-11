@@ -57,6 +57,7 @@ const Index = () => {
   const [zoom, setZoom] = useState(2);
   const [coordinates, setCoordinates] = useState({ lng: 0, lat: 20 });
   const [mapInstance, setMapInstance] = useState<maptilersdk.Map | null>(null);
+  const [terrainEnabled, setTerrainEnabled] = useState(false);
 
   const weather = useWeatherLayers(mapInstance);
 
@@ -115,6 +116,43 @@ const Index = () => {
     emit('onMapLoad', { mapInstance: map });
   }, []);
 
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    const update = () => {
+      try {
+        const enabled = mapInstance.hasTerrain();
+        setTerrainEnabled(enabled);
+        mapInstance.easeTo({ pitch: enabled ? mapInstance.getMaxPitch() : 0, duration: 2000 });
+      } catch {
+        setTerrainEnabled(false);
+      }
+    };
+
+    update();
+    mapInstance.on("terrain", update);
+    return () => {
+      mapInstance.off("terrain", update);
+    };
+  }, [mapInstance]);
+
+  const toggleTerrain = useCallback(async () => {
+    if (!mapInstance) return;
+    try {
+      const currentlyEnabled = mapInstance.hasTerrain();
+      if (currentlyEnabled) {
+        setTerrainEnabled(false);
+        await mapInstance.disableTerrain();
+      } else {
+        setTerrainEnabled(true);
+        await mapInstance.enableTerrain(1.5);
+      }
+      setTerrainEnabled(mapInstance.hasTerrain());
+    } catch {
+      setTerrainEnabled(false);
+    }
+  }, [mapInstance]);
+
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-background">
       <MoScriptsAnalysisPanel />
@@ -129,6 +167,8 @@ const Index = () => {
         <WeatherControls
           activeLayer={weather.activeLayer}
           onChangeLayer={weather.changeWeatherLayer}
+          terrainEnabled={terrainEnabled}
+          onToggleTerrain={toggleTerrain}
           isPlaying={weather.isPlaying}
           onTogglePlay={weather.togglePlayPause}
           timeText={weather.timeText}

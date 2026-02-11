@@ -7,8 +7,36 @@ import {
   PressureLayer,
   RadarLayer,
   ColorRamp,
-  WindArrowLayer,
+  ParticleLayer,
 } from "@maptiler/weather";
+
+// Custom WindArrowLayer implementation using ParticleLayer
+class WindArrowLayer extends ParticleLayer {
+  constructor(options?: { opacity?: number }) {
+    super(
+      "wind-arrows",
+      null, // TileLayerOptions
+      {       // ParticleLayerOptions
+        decodeChannels: "rg",
+        decodeAsWaves: false,
+        decodeMin: 0,
+        decodeMax: 255,
+        maxAmount: 128,
+        color: [0, 0, 0, 30],
+        fastColor: [0, 0, 0, 100],
+        drawAsLines: true,
+        size: 1.5,
+        speed: 0.001,
+        density: 2,
+      },
+      null // ColoringFragments
+    );
+    
+    if (options?.opacity) {
+      (this as any).setOpacity(options.opacity);
+    }
+  }
+}
 
 export type WeatherLayerType =
   | "wind"
@@ -176,9 +204,8 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
         };
         break;
       case "wind-arrows":
-        // Create wind arrows using MapTiler WindArrowLayer
+        // Create wind arrows using custom ParticleLayer implementation
         weatherLayer = new WindArrowLayer({
-          id: "wind-arrows",
           opacity: 0.8,
         });
         break;

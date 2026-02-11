@@ -13,6 +13,8 @@ const LAYER_OPTIONS: { id: WeatherLayerType; label: string }[] = [
 interface WeatherControlsProps {
   activeLayer: WeatherLayerType;
   onChangeLayer: (type: WeatherLayerType) => void;
+  terrainEnabled?: boolean;
+  onToggleTerrain?: () => void;
   isPlaying: boolean;
   onTogglePlay: () => void;
   timeText: string;
@@ -26,6 +28,8 @@ interface WeatherControlsProps {
 const WeatherControls = ({
   activeLayer,
   onChangeLayer,
+  terrainEnabled,
+  onToggleTerrain,
   isPlaying,
   onTogglePlay,
   timeText,
@@ -64,6 +68,20 @@ const WeatherControls = ({
             {opt.label}
           </button>
         ))}
+
+        {onToggleTerrain && (
+          <button
+            type="button"
+            onClick={onToggleTerrain}
+            className={`mt-2 px-3 py-1.5 rounded-lg text-xs font-medium backdrop-blur-md border transition-all duration-200 shadow-lg ${
+              terrainEnabled
+                ? "bg-primary/90 text-primary-foreground border-primary/50"
+                : "bg-card/80 text-foreground/80 border-border/50 hover:bg-secondary hover:text-foreground"
+            }`}
+          >
+            Terrain
+          </button>
+        )}
       </div>
 
       {/* Bottom-center: time animation bar */}
