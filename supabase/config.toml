@@ -1,1 +1,10 @@
 project_id = "tciktazfwokzbxnutpvh"
+
+[functions.ingest-gfs]
+verify_jwt = false
+
+[functions.ingest-gpm]
+verify_jwt = false
+
+[functions.ingest-jtwc]
+verify_jwt = false
