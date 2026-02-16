@@ -63,12 +63,11 @@ const Index = () => {
 
     async function loadThreats() {
       try {
-        // 🔥 PAUSED: Legacy threats polling disabled (Analysis Mode)
-        // const data = await fetchRealtimeThreats();
-        // const threats = normalizeThreats(data);
-        // if (threats.length > 0) {
-        //   await emit('onThreatsUpdate', { threats, mapInstance });
-        // }
+        const data = await fetchRealtimeThreats();
+        const threats = normalizeThreats(data);
+        if (threats.length > 0) {
+          await emit('onThreatsUpdate', { threats, mapInstance });
+        }
       } catch (error) {
         console.error('❌ Failed to load threats:', error);
       }
@@ -76,9 +75,8 @@ const Index = () => {
 
     loadThreats();
 
-    // 🔥 PAUSED: Polling disabled (Analysis Mode)
-    // const interval = setInterval(loadThreats, 30000);
-    // return () => clearInterval(interval);
+    const interval = setInterval(loadThreats, 30000);
+    return () => clearInterval(interval);
   }, [mapInstance]);
 
   const handleMapReady = useCallback((map: maptilersdk.Map) => {

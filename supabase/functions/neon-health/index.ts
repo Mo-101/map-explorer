@@ -38,12 +38,21 @@ serve(async (req) => {
         intensity DOUBLE PRECISION,
         metadata JSONB,
         is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        data_source_run_id TEXT,
+        forecast_hour INTEGER,
+        source_artifact JSONB,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         UNIQUE (source, external_id)
       );
     `;
     await sql`CREATE INDEX IF NOT EXISTS idx_hazard_alerts_active ON hazard_alerts (is_active);`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_hazard_alerts_source_run ON hazard_alerts (source, data_source_run_id);`;
+
+    // Add columns if they don't exist (for existing tables)
+    await sql`ALTER TABLE hazard_alerts ADD COLUMN IF NOT EXISTS data_source_run_id TEXT;`;
+    await sql`ALTER TABLE hazard_alerts ADD COLUMN IF NOT EXISTS forecast_hour INTEGER;`;
+    await sql`ALTER TABLE hazard_alerts ADD COLUMN IF NOT EXISTS source_artifact JSONB;`;
 
     // Seed if empty
     const [{ count }] = await sql`SELECT COUNT(*)::int AS count FROM hazard_alerts WHERE is_active = TRUE;`;
