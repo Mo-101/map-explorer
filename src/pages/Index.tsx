@@ -7,6 +7,7 @@ import WeatherControls from "@/components/WeatherControls";
 import BackendStatusBadge from "@/components/BackendStatusBadge";
 import SituationalTicker from "@/components/SituationalTicker";
 import ThreatDetailsPanel from "@/components/ThreatDetailsPanel";
+import IMERGRainfallLayer from "@/components/IMERGRainfallLayer";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
 import { useSituationalMarkers } from "@/hooks/useSituationalMarkers";
 import SituationalMarkersLayer from "@/components/SituationalMarkersLayer";
@@ -50,6 +51,8 @@ const Index = () => {
   const [terrainEnabled, setTerrainEnabled] = useState(false);
   const [selectedThreat, setSelectedThreat] = useState<any>(null);
   const [allThreats, setAllThreats] = useState<any[]>([]);
+  const [imergEnabled, setImergEnabled] = useState(false);
+  const [imergMode, setImergMode] = useState<'24h' | '72h'>('24h');
 
   const weather = useWeatherLayers(mapInstance);
   const situational = useSituationalMarkers(60_000);
@@ -144,6 +147,10 @@ const Index = () => {
         <SituationalMarkersLayer map={mapInstance} markers={situational.data.markers} />
       )}
 
+      {mapInstance && (
+        <IMERGRainfallLayer map={mapInstance} visible={imergEnabled} mode={imergMode} />
+      )}
+
       {situational.data?.analytics && (
         <SituationalAnalyticsOverlay
           analytics={situational.data.analytics}
@@ -165,6 +172,10 @@ const Index = () => {
           sliderMax={weather.sliderMax}
           onSliderChange={weather.onSliderChange}
           pointerValue={weather.pointerValue}
+          imergEnabled={imergEnabled}
+          onToggleIMERG={() => setImergEnabled(v => !v)}
+          imergMode={imergMode}
+          onChangeIMERGMode={setImergMode}
         />
       )}
 

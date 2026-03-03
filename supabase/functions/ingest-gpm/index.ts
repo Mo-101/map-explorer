@@ -14,24 +14,61 @@ const THRESHOLDS = {
   rain_72h_extreme: 400, // mm
 };
 
-// Africa monitoring points — covers major flood-prone regions
+const STALE_HOURS = 72;
+
+// ── Expanded monitoring points: 35 strategic flood-prone locations ──
 const MONITORING_POINTS = [
-  { lat: -18.6, lon: 45.1, name: "Madagascar East Coast" },
-  { lat: -15.4, lon: 35.0, name: "Malawi Shire Basin" },
-  { lat: 13.5, lon: 2.1, name: "Niger River Basin" },
-  { lat: 6.5, lon: 3.4, name: "Lagos Coastal" },
-  { lat: -4.3, lon: 15.3, name: "Congo Basin" },
+  // East Africa
   { lat: -1.3, lon: 36.8, name: "Kenya Highlands" },
   { lat: 9.0, lon: 38.7, name: "Ethiopian Highlands" },
-  { lat: 14.7, lon: -17.5, name: "Senegal Coast" },
-  { lat: -26.2, lon: 28.0, name: "Gauteng SA" },
-  { lat: 12.0, lon: 15.0, name: "Lake Chad Basin" },
-  { lat: -8.0, lon: 32.0, name: "Tanzania Western" },
-  { lat: 7.5, lon: -1.5, name: "Ghana Volta Basin" },
-  { lat: 11.5, lon: 43.1, name: "Djibouti" },
-  { lat: -20.0, lon: 57.5, name: "Mauritius" },
+  { lat: 0.3, lon: 32.6, name: "Lake Victoria Basin" },
+  { lat: -6.8, lon: 39.3, name: "Dar es Salaam Coast" },
   { lat: 2.0, lon: 45.3, name: "Mogadishu" },
+  { lat: -1.9, lon: 29.9, name: "Rwanda Highlands" },
+  { lat: -3.4, lon: 29.4, name: "Bujumbura Lowlands" },
+  { lat: -8.0, lon: 32.0, name: "Tanzania Western" },
+  // Southern Africa
+  { lat: -26.2, lon: 28.0, name: "Gauteng SA" },
+  { lat: -15.4, lon: 35.0, name: "Malawi Shire Basin" },
+  { lat: -15.4, lon: 28.3, name: "Lusaka Basin" },
+  { lat: -17.8, lon: 31.0, name: "Harare Catchment" },
+  { lat: -25.9, lon: 32.6, name: "Maputo Coastal" },
+  { lat: -8.8, lon: 13.2, name: "Luanda Coastal" },
+  // West Africa
+  { lat: 6.5, lon: 3.4, name: "Lagos Coastal" },
+  { lat: 9.1, lon: 7.5, name: "Niger-Benue Confluence" },
+  { lat: 14.7, lon: -17.5, name: "Senegal Coast" },
+  { lat: 5.6, lon: -0.2, name: "Ghana Volta Basin" },
+  { lat: 12.4, lon: -1.5, name: "Ouagadougou Basin" },
+  { lat: 12.6, lon: -8.0, name: "Upper Niger Basin" },
+  { lat: 9.5, lon: -13.7, name: "Conakry Coast" },
+  { lat: 6.3, lon: -10.8, name: "Monrovia Coast" },
+  // North Africa
+  { lat: 30.0, lon: 31.2, name: "Nile Delta" },
+  { lat: 15.6, lon: 32.5, name: "Khartoum Nile" },
+  { lat: 36.8, lon: 3.1, name: "Algiers Coast" },
+  // Central Africa
+  { lat: -4.3, lon: 15.3, name: "Congo Basin" },
+  { lat: 3.9, lon: 11.5, name: "Cameroon Highlands" },
+  { lat: 4.4, lon: 18.6, name: "Central African Basin" },
+  // Sahel
+  { lat: 13.5, lon: 2.1, name: "Niger River Basin" },
+  { lat: 12.1, lon: 15.0, name: "Lake Chad Basin" },
+  // Islands & Indian Ocean
+  { lat: -18.6, lon: 45.1, name: "Madagascar East Coast" },
+  { lat: -18.9, lon: 47.5, name: "Antananarivo Basin" },
+  { lat: -11.7, lon: 43.3, name: "Comoros" },
+  { lat: -20.0, lon: 57.5, name: "Mauritius" },
+  { lat: 11.5, lon: 43.1, name: "Djibouti" },
 ];
+
+// Batch fetch helper
+async function fetchBatch<T>(items: T[], fn: (item: T) => Promise<void>, concurrency = 5): Promise<void> {
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    await Promise.allSettled(batch.map(fn));
+  }
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -51,7 +88,7 @@ serve(async (req) => {
     const now = new Date();
     const runId = `gpm_${now.toISOString().slice(0, 13).replace(/[-T:]/g, "")}`;
 
-    // Check if recently ingested (within last 25 minutes)
+    // Check if recently ingested
     const existing = await sql`
       SELECT COUNT(*)::int AS count FROM hazard_alerts
       WHERE source = 'gpm_imerg' AND data_source_run_id = ${runId};
@@ -74,12 +111,11 @@ serve(async (req) => {
     };
 
     const allHazards: any[] = [];
+    // Collect raw precipitation data for map overlay
+    const precipGrid: { lat: number; lon: number; name: string; accum24h: number; accum72h: number; hourlyData: number[] }[] = [];
 
-    // Use Open-Meteo's historical/forecast precipitation API (backed by ERA5/GFS)
-    // This provides accumulated precipitation data equivalent to what GPM IMERG measures
-    for (const pt of MONITORING_POINTS) {
+    await fetchBatch(MONITORING_POINTS, async (pt) => {
       try {
-        // Get past 3 days of precipitation data + forecast
         const pastDays = 3;
         const url = `https://api.open-meteo.com/v1/forecast?` +
           `latitude=${pt.lat}&longitude=${pt.lon}&` +
@@ -89,24 +125,29 @@ serve(async (req) => {
         const resp = await fetch(url);
         if (!resp.ok) {
           await resp.text();
-          continue;
+          return;
         }
 
         const data = await resp.json();
         const hourly = data?.hourly;
-        if (!hourly?.time || !hourly?.precipitation) continue;
+        if (!hourly?.time || !hourly?.precipitation) return;
 
-        // Calculate 24h and 72h accumulations (looking backward from latest data)
         const precipValues: number[] = hourly.precipitation.map((v: number | null) => v ?? 0);
         const totalHours = precipValues.length;
 
-        // 24h accumulation (last 24 entries)
         const last24h = precipValues.slice(Math.max(0, totalHours - 24));
         const accum24h = last24h.reduce((s: number, v: number) => s + v, 0);
 
-        // 72h accumulation (last 72 entries)
         const last72h = precipValues.slice(Math.max(0, totalHours - 72));
         const accum72h = last72h.reduce((s: number, v: number) => s + v, 0);
+
+        // Store for overlay data
+        precipGrid.push({
+          lat: pt.lat, lon: pt.lon, name: pt.name,
+          accum24h: Math.round(accum24h * 10) / 10,
+          accum72h: Math.round(accum72h * 10) / 10,
+          hourlyData: last24h,
+        });
 
         const pointArtifact = {
           location: pt.name,
@@ -115,37 +156,28 @@ serve(async (req) => {
           accum_24h_mm: Math.round(accum24h * 10) / 10,
           accum_72h_mm: Math.round(accum72h * 10) / 10,
           hourly_samples: totalHours,
+          variable: "precipitation",
         };
 
         // 24h threshold check
         if (accum24h >= THRESHOLDS.rain_24h_extreme) {
           allHazards.push({
             external_id: `${runId}_24h_${pt.lat}_${pt.lon}`,
-            source: "gpm_imerg",
-            type: "flood",
-            severity: "extreme",
+            source: "gpm_imerg", type: "flood", severity: "extreme",
             title: `Extreme rainfall ${accum24h.toFixed(0)} mm/24h — ${pt.name}`,
             description: `GPM IMERG: ${accum24h.toFixed(0)} mm accumulated over 24h at ${pt.name}. Flood risk critical.`,
-            lat: pt.lat,
-            lng: pt.lon,
-            intensity: accum24h,
-            data_source_run_id: runId,
-            forecast_hour: null,
+            lat: pt.lat, lng: pt.lon, intensity: accum24h,
+            data_source_run_id: runId, forecast_hour: null,
             source_artifact: { ...pointArtifact, threshold_type: "24h", threshold_value: THRESHOLDS.rain_24h_extreme },
           });
         } else if (accum24h >= THRESHOLDS.rain_24h_high) {
           allHazards.push({
             external_id: `${runId}_24h_${pt.lat}_${pt.lon}`,
-            source: "gpm_imerg",
-            type: "flood",
-            severity: "high",
+            source: "gpm_imerg", type: "flood", severity: "high",
             title: `Heavy rainfall ${accum24h.toFixed(0)} mm/24h — ${pt.name}`,
             description: `GPM IMERG: ${accum24h.toFixed(0)} mm accumulated over 24h at ${pt.name}. Elevated flood risk.`,
-            lat: pt.lat,
-            lng: pt.lon,
-            intensity: accum24h,
-            data_source_run_id: runId,
-            forecast_hour: null,
+            lat: pt.lat, lng: pt.lon, intensity: accum24h,
+            data_source_run_id: runId, forecast_hour: null,
             source_artifact: { ...pointArtifact, threshold_type: "24h", threshold_value: THRESHOLDS.rain_24h_high },
           });
         }
@@ -154,40 +186,30 @@ serve(async (req) => {
         if (accum72h >= THRESHOLDS.rain_72h_extreme) {
           allHazards.push({
             external_id: `${runId}_72h_${pt.lat}_${pt.lon}`,
-            source: "gpm_imerg",
-            type: "flood",
-            severity: "extreme",
+            source: "gpm_imerg", type: "flood", severity: "extreme",
             title: `Sustained extreme rainfall ${accum72h.toFixed(0)} mm/72h — ${pt.name}`,
             description: `GPM IMERG: ${accum72h.toFixed(0)} mm accumulated over 72h at ${pt.name}. Severe flood risk.`,
-            lat: pt.lat,
-            lng: pt.lon,
-            intensity: accum72h,
-            data_source_run_id: runId,
-            forecast_hour: null,
+            lat: pt.lat, lng: pt.lon, intensity: accum72h,
+            data_source_run_id: runId, forecast_hour: null,
             source_artifact: { ...pointArtifact, threshold_type: "72h", threshold_value: THRESHOLDS.rain_72h_extreme },
           });
         } else if (accum72h >= THRESHOLDS.rain_72h_high) {
           allHazards.push({
             external_id: `${runId}_72h_${pt.lat}_${pt.lon}`,
-            source: "gpm_imerg",
-            type: "flood",
-            severity: "high",
+            source: "gpm_imerg", type: "flood", severity: "high",
             title: `Sustained heavy rainfall ${accum72h.toFixed(0)} mm/72h — ${pt.name}`,
             description: `GPM IMERG: ${accum72h.toFixed(0)} mm accumulated over 72h at ${pt.name}. Elevated flood risk.`,
-            lat: pt.lat,
-            lng: pt.lon,
-            intensity: accum72h,
-            data_source_run_id: runId,
-            forecast_hour: null,
+            lat: pt.lat, lng: pt.lon, intensity: accum72h,
+            data_source_run_id: runId, forecast_hour: null,
             source_artifact: { ...pointArtifact, threshold_type: "72h", threshold_value: THRESHOLDS.rain_72h_high },
           });
         }
       } catch (ptErr) {
         console.log(`GPM error for ${pt.name}:`, ptErr);
       }
-    }
+    }, 5);
 
-    // Write to Neon
+    // Write hazard alerts to Neon
     let upserted = 0;
     for (const h of allHazards) {
       await sql`
@@ -206,6 +228,16 @@ serve(async (req) => {
       upserted++;
     }
 
+    // ── Stale alert cleanup ──
+    await sql`
+      UPDATE hazard_alerts
+      SET is_active = false
+      WHERE source = 'gpm_imerg'
+        AND is_active = true
+        AND data_source_run_id IS NOT NULL
+        AND data_source_run_id != ${runId};
+    `;
+
     return new Response(
       JSON.stringify({
         status: "completed",
@@ -214,6 +246,8 @@ serve(async (req) => {
         points_scanned: MONITORING_POINTS.length,
         hazards_detected: allHazards.length,
         hazards_upserted: upserted,
+        precip_grid_points: precipGrid.length,
+        precip_grid: precipGrid,
         thresholds: THRESHOLDS,
         run_artifact: runArtifact,
         timestamp: new Date().toISOString(),
