@@ -1,1 +1,0 @@
--r src/model-service/requirements.txt

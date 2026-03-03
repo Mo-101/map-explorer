@@ -17,3 +17,15 @@ verify_jwt = false
 
 [functions.ai-situational-summary]
 verify_jwt = false
+
+[functions.ai-analyze]
+verify_jwt = false
+
+[functions.ingest-gdacs]
+verify_jwt = false
+
+[functions.ingest-reliefweb]
+verify_jwt = false
+
+[functions.smoke-test]
+verify_jwt = false
