@@ -300,13 +300,33 @@ serve(async (req) => {
     const { date, hour, runId } = getLatestGFSRun();
 
     // Check if this run was already ingested
+    // ── Stale alert cleanup: deactivate GFS alerts from previous runs ──
+    // Run this BEFORE the skip check so old data is always cleaned up
+    await sql`
+      UPDATE hazard_alerts
+      SET is_active = false, updated_at = NOW()
+      WHERE source = 'gfs'
+        AND is_active = true
+        AND data_source_run_id IS NOT NULL
+        AND data_source_run_id != ${runId};
+    `;
+    // Also deactivate anything older than 72h regardless of run
+    await sql`
+      UPDATE hazard_alerts
+      SET is_active = false, updated_at = NOW()
+      WHERE source = 'gfs'
+        AND is_active = true
+        AND updated_at < NOW() - INTERVAL '72 hours';
+    `;
+    console.log(`[ingest-gfs] Stale cleanup: deactivated alerts from previous runs (keeping ${runId})`);
+
     const existing = await sql`
       SELECT COUNT(*)::int AS count FROM hazard_alerts
       WHERE source = 'gfs' AND data_source_run_id = ${runId};
     `;
     if (existing[0]?.count > 0) {
       return new Response(
-        JSON.stringify({ status: "skipped", reason: "run already ingested", run_id: runId, existing_count: existing[0].count }),
+        JSON.stringify({ status: "completed_cleanup", reason: "run already ingested, stale alerts cleaned", run_id: runId, existing_count: existing[0].count }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -407,19 +427,7 @@ serve(async (req) => {
       upserted++;
     }
 
-    // ── Stale alert cleanup: deactivate GFS alerts older than 72h ──
-    const staleResult = await sql`
-      UPDATE hazard_alerts
-      SET is_active = false
-      WHERE source = 'gfs'
-        AND is_active = true
-        AND (
-          updated_at < NOW() - INTERVAL '${STALE_HOURS} hours'
-          OR (data_source_run_id IS NOT NULL AND data_source_run_id != ${runId})
-        );
-    `;
-    const staleCount = (staleResult as any)?.length ?? 0;
-    console.log(`[ingest-gfs] Stale cleanup: deactivated alerts from previous runs`);
+    // (Stale cleanup already done at top of function)
 
     return new Response(
       JSON.stringify({
