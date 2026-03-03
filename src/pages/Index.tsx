@@ -8,6 +8,7 @@ import BackendStatusBadge from "@/components/BackendStatusBadge";
 import SituationalTicker from "@/components/SituationalTicker";
 import ThreatDetailsPanel from "@/components/ThreatDetailsPanel";
 import IMERGRainfallLayer from "@/components/IMERGRainfallLayer";
+import ClusterPolygonLayer from "@/components/ClusterPolygonLayer";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
 import { useSituationalMarkers } from "@/hooks/useSituationalMarkers";
 import SituationalMarkersLayer from "@/components/SituationalMarkersLayer";
@@ -53,6 +54,7 @@ const Index = () => {
   const [allThreats, setAllThreats] = useState<any[]>([]);
   const [imergEnabled, setImergEnabled] = useState(false);
   const [imergMode, setImergMode] = useState<'24h' | '72h'>('24h');
+  const [clusters, setClusters] = useState<any[]>([]);
 
   const weather = useWeatherLayers(mapInstance);
   const situational = useSituationalMarkers(60_000);
@@ -72,6 +74,10 @@ const Index = () => {
         const data = await fetchRealtimeThreats();
         const threats = normalizeThreats(data);
         setAllThreats(threats);
+        // Store clusters if available
+        if (Array.isArray(data?.clusters)) {
+          setClusters(data.clusters);
+        }
         if (threats.length > 0) {
           await emit('onThreatsUpdate', { threats, mapInstance });
         }
@@ -149,6 +155,32 @@ const Index = () => {
 
       {mapInstance && (
         <IMERGRainfallLayer map={mapInstance} visible={imergEnabled} mode={imergMode} />
+      )}
+
+      {mapInstance && clusters.length > 0 && (
+        <ClusterPolygonLayer
+          map={mapInstance}
+          clusters={clusters}
+          onClusterClick={(cluster) => {
+            // Zoom to cluster and show details of the highest-severity threat
+            mapInstance.flyTo({ center: [cluster.center_lng, cluster.center_lat], zoom: 6, duration: 1500 });
+            if (cluster.threats?.[0]) {
+              const t = cluster.threats[0];
+              setSelectedThreat({
+                id: t.id || cluster.cluster_id,
+                title: cluster.title,
+                type: cluster.type,
+                severity: cluster.severity,
+                description: cluster.description,
+                lat: cluster.center_lat,
+                lng: cluster.center_lng,
+                intensity: cluster.max_intensity,
+                source_artifact: t.source_artifact,
+                data_source_run_id: t.data_source_run_id,
+              });
+            }
+          }}
+        />
       )}
 
       {situational.data?.analytics && (
