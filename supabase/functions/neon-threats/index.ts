@@ -314,6 +314,20 @@ serve(async (req) => {
     // Cluster threats
     const clusters = clusterThreats(rawThreats);
 
+    // ── Cluster stats queries ──
+    const activeRuns = await sql`
+      SELECT DISTINCT data_source_run_id FROM hazard_alerts
+      WHERE is_active = true AND data_source_run_id IS NOT NULL;
+    `;
+    const bySource = await sql`
+      SELECT source, COUNT(*)::int AS count FROM hazard_alerts
+      WHERE is_active = true GROUP BY source;
+    `;
+    const bySeverity = await sql`
+      SELECT severity, COUNT(*)::int AS count FROM hazard_alerts
+      WHERE is_active = true GROUP BY severity;
+    `;
+
     // Also return flat threats list for backward compatibility
     const flatThreats = rawThreats.map(r => ({
       id: r.id,
@@ -342,6 +356,9 @@ serve(async (req) => {
         cluster_count: clusters.length,
         raw_count: rawThreats.length,
         count: flatThreats.length,
+        active_run_ids: activeRuns.map((r: any) => r.data_source_run_id),
+        by_source: Object.fromEntries(bySource.map((r: any) => [r.source, r.count])),
+        by_severity: Object.fromEntries(bySeverity.map((r: any) => [r.severity, r.count])),
         generated_at: new Date().toISOString(),
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
