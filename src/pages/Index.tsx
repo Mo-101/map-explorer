@@ -5,7 +5,7 @@ import MapView from "@/components/MapView";
 import MapControls from "@/components/MapControls";
 import WeatherControls from "@/components/WeatherControls";
 import BackendStatusBadge from "@/components/BackendStatusBadge";
-import MoScriptsAnalysisPanel from "@/components/MoScriptsAnalysisPanel";
+import SituationalTicker from "@/components/SituationalTicker";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
 import { useSituationalMarkers } from "@/hooks/useSituationalMarkers";
 import SituationalMarkersLayer from "@/components/SituationalMarkersLayer";
@@ -123,7 +123,7 @@ const Index = () => {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-background">
-      <MoScriptsAnalysisPanel />
+      <SituationalTicker />
       <MapView
         onZoomChange={setZoom}
         onCenterChange={(lng, lat) => setCoordinates({ lng, lat })}
