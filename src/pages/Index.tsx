@@ -9,10 +9,8 @@ import SituationalTicker from "@/components/SituationalTicker";
 import ThreatDetailsPanel from "@/components/ThreatDetailsPanel";
 import IMERGRainfallLayer from "@/components/IMERGRainfallLayer";
 import ClusterPolygonLayer from "@/components/ClusterPolygonLayer";
+import ClusterStatsBadge from "@/components/ClusterStatsBadge";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
-import { useSituationalMarkers } from "@/hooks/useSituationalMarkers";
-import SituationalMarkersLayer from "@/components/SituationalMarkersLayer";
-import SituationalAnalyticsOverlay from "@/components/SituationalAnalyticsOverlay";
 import { orchestrator, emit } from "@/moscripts";
 import { mo_THREAT_RENDERER } from "@/moscripts";
 import { fetchRealtimeThreats } from "@/services/hazardsApi";
@@ -57,7 +55,6 @@ const Index = () => {
   const [clusters, setClusters] = useState<any[]>([]);
 
   const weather = useWeatherLayers(mapInstance);
-  const situational = useSituationalMarkers(60_000);
 
   // Register MoScripts on mount
   useEffect(() => {
@@ -149,9 +146,7 @@ const Index = () => {
       <BackendStatusBadge />
       <MapControls zoom={zoom} coordinates={coordinates} />
 
-      {mapInstance && situational.data?.markers && situational.data.markers.length > 0 && (
-        <SituationalMarkersLayer map={mapInstance} markers={situational.data.markers} />
-      )}
+      <ClusterStatsBadge clusterCount={clusters.length} rawThreatCount={allThreats.length} />
 
       {mapInstance && (
         <IMERGRainfallLayer map={mapInstance} visible={imergEnabled} mode={imergMode} />
@@ -162,7 +157,6 @@ const Index = () => {
           map={mapInstance}
           clusters={clusters}
           onClusterClick={(cluster) => {
-            // Zoom to cluster and show details of the highest-severity threat
             mapInstance.flyTo({ center: [cluster.center_lng, cluster.center_lat], zoom: 6, duration: 1500 });
             if (cluster.threats?.[0]) {
               const t = cluster.threats[0];
@@ -180,13 +174,6 @@ const Index = () => {
               });
             }
           }}
-        />
-      )}
-
-      {situational.data?.analytics && (
-        <SituationalAnalyticsOverlay
-          analytics={situational.data.analytics}
-          moscriptsVoice={situational.data.moscripts_voice}
         />
       )}
 
