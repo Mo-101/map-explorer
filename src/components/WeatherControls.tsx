@@ -1,4 +1,4 @@
-import { Play, Pause } from "lucide-react";
+import { Play, Pause, CloudRain } from "lucide-react";
 import type { WeatherLayerType } from "@/hooks/useWeatherLayers";
 
 const LAYER_OPTIONS: { id: WeatherLayerType; label: string }[] = [
@@ -23,6 +23,10 @@ interface WeatherControlsProps {
   sliderMax: number;
   onSliderChange: (val: number) => void;
   pointerValue: string;
+  imergEnabled?: boolean;
+  onToggleIMERG?: () => void;
+  imergMode?: '24h' | '72h';
+  onChangeIMERGMode?: (mode: '24h' | '72h') => void;
 }
 
 const WeatherControls = ({
@@ -38,6 +42,10 @@ const WeatherControls = ({
   sliderMax,
   onSliderChange,
   pointerValue,
+  imergEnabled,
+  onToggleIMERG,
+  imergMode,
+  onChangeIMERGMode,
 }: WeatherControlsProps) => {
   return (
     <>
@@ -81,6 +89,41 @@ const WeatherControls = ({
           >
             Terrain
           </button>
+        )}
+
+        {/* IMERG Satellite Rainfall */}
+        {onToggleIMERG && (
+          <div className="mt-2 flex flex-col gap-1">
+            <button
+              type="button"
+              onClick={onToggleIMERG}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium backdrop-blur-md border transition-all duration-200 shadow-lg flex items-center gap-1.5 ${
+                imergEnabled
+                  ? "bg-primary/90 text-primary-foreground border-primary/50"
+                  : "bg-card/80 text-foreground/80 border-border/50 hover:bg-secondary hover:text-foreground"
+              }`}
+            >
+              <CloudRain size={12} />
+              IMERG
+            </button>
+            {imergEnabled && onChangeIMERGMode && (
+              <div className="flex gap-0.5">
+                {(['24h', '72h'] as const).map(m => (
+                  <button
+                    key={m}
+                    onClick={() => onChangeIMERGMode(m)}
+                    className={`flex-1 px-2 py-1 rounded text-[10px] font-medium transition-all ${
+                      imergMode === m
+                        ? 'bg-primary/80 text-primary-foreground'
+                        : 'bg-card/60 text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
