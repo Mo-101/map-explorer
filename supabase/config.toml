@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.smoke-test]
 verify_jwt = false
+
+[functions.ingest-usgs]
+verify_jwt = false

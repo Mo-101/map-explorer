@@ -1,70 +1,82 @@
 import { useEffect, useState } from "react";
-import { fetchBackendHealth } from "@/services/hazardsApi";
+import { fetchSmokeTest } from "@/services/hazardsApi";
 
-type Status = {
-  ok: boolean;
-  health?: any;
+type SmokeData = {
+  database: string;
+  server_time?: string;
+  active_threats?: number;
+  total_rows?: number;
+  by_source?: Record<string, { last_updated: string; active_count: number }>;
+  by_severity?: Record<string, number>;
   error?: string;
-  checkedAt: string;
+  checked_at?: string;
 };
 
 export default function BackendStatusBadge() {
-  const [status, setStatus] = useState<Status>({ ok: false, checkedAt: new Date().toISOString() });
+  const [data, setData] = useState<SmokeData | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     const check = async () => {
       try {
-        const healthJson = await fetchBackendHealth();
-        if (cancelled) return;
-
-        setStatus({
-          ok: healthJson?.status === "healthy",
-          health: healthJson,
-          checkedAt: new Date().toISOString(),
-        });
-      } catch (e: any) {
-        if (cancelled) return;
-        setStatus({
-          ok: false,
-          error: e?.message || "Backend unreachable",
-          checkedAt: new Date().toISOString(),
-        });
+        const result = await fetchSmokeTest();
+        if (!cancelled) setData(result);
+      } catch {
+        if (!cancelled) setData({ database: "error", error: "unreachable" });
       }
     };
 
     check();
-    const pollMs = 60_000;
-    const id = window.setInterval(check, pollMs);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
+    const id = window.setInterval(check, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
   }, []);
 
-  const label = status.ok ? "NEON DB OK" : "NEON DB DOWN";
-  const details = status.ok
-    ? `mode: ${status.health?.system_mode || "dev"} | ${status.health?.threats_count ?? 0} threats`
-    : status.error
-      ? status.error
-      : "unreachable";
+  const ok = data?.database === "connected";
+  const label = ok ? "NEON DB OK" : "NEON DB DOWN";
 
   return (
     <div className="absolute top-5 right-5 z-20">
       <div
-        className={`px-3 py-2 rounded-xl backdrop-blur-md border shadow-lg text-xs font-mono ${
-          status.ok
+        className={`px-3 py-2 rounded-xl backdrop-blur-md border shadow-lg text-xs font-mono cursor-pointer transition-all ${
+          ok
             ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-200"
             : "bg-red-500/15 border-red-500/30 text-red-200"
         }`}
+        onClick={() => setExpanded(v => !v)}
       >
         <div className="flex items-center justify-between gap-3">
           <span className="font-semibold">{label}</span>
-          <span className="opacity-80">{new Date(status.checkedAt).toLocaleTimeString()}</span>
+          {ok && data?.active_threats !== undefined && (
+            <span className="opacity-90">{data.active_threats} active</span>
+          )}
+          <span className="opacity-60">{data?.checked_at ? new Date(data.checked_at).toLocaleTimeString() : "..."}</span>
         </div>
-        <div className="opacity-80 mt-1">{details}</div>
+
+        {!ok && data?.error && (
+          <div className="opacity-80 mt-1">{data.error}</div>
+        )}
+
+        {expanded && ok && data?.by_source && (
+          <div className="mt-2 pt-2 border-t border-emerald-500/20 space-y-1">
+            {Object.entries(data.by_source).map(([src, info]) => (
+              <div key={src} className="flex justify-between gap-4">
+                <span className="text-emerald-300">{src}</span>
+                <span className="opacity-70">
+                  {info.active_count} active · {new Date(info.last_updated).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+            {data.by_severity && (
+              <div className="mt-1 pt-1 border-t border-emerald-500/20 opacity-70">
+                {Object.entries(data.by_severity).map(([sev, count]) => (
+                  <span key={sev} className="mr-2">{sev}: {count}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
