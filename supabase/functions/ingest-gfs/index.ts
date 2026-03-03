@@ -310,13 +310,13 @@ serve(async (req) => {
         AND data_source_run_id IS NOT NULL
         AND data_source_run_id != ${runId};
     `;
-    // Also deactivate anything older than 72h regardless of run
+    // Also deactivate anything not seen in 72h (TTL)
     await sql`
       UPDATE hazard_alerts
       SET is_active = false, updated_at = NOW()
       WHERE source = 'gfs'
         AND is_active = true
-        AND updated_at < NOW() - INTERVAL '72 hours';
+        AND last_seen_at < NOW() - INTERVAL '72 hours';
     `;
     console.log(`[ingest-gfs] Stale cleanup: deactivated alerts from previous runs (keeping ${runId})`);
 
@@ -422,6 +422,7 @@ serve(async (req) => {
           metadata = EXCLUDED.metadata,
           source_artifact = EXCLUDED.source_artifact,
           is_active = TRUE,
+          last_seen_at = NOW(),
           updated_at = NOW();
       `;
       upserted++;
@@ -438,7 +439,7 @@ serve(async (req) => {
         raw_detections: allDetections.length,
         after_temporal_filter: filtered.length,
         hazards_upserted: upserted,
-        stale_deactivated: staleCount,
+        stale_cleanup: "completed",
         thresholds: THRESHOLDS,
         temporal_persistence: TEMPORAL_PERSISTENCE,
         run_artifact: runArtifact,

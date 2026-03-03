@@ -50,6 +50,18 @@ serve(async (req) => {
     const now = new Date();
     const runId = `jtwc_${now.toISOString().slice(0, 13).replace(/[-T:]/g, "")}`;
 
+    // ── Stale alert cleanup (runs BEFORE skip check) ──
+    await sql`
+      UPDATE hazard_alerts SET is_active = false, updated_at = NOW()
+      WHERE source = 'jtwc' AND is_active = true
+        AND data_source_run_id IS NOT NULL AND data_source_run_id != ${runId};
+    `;
+    await sql`
+      UPDATE hazard_alerts SET is_active = false, updated_at = NOW()
+      WHERE source = 'jtwc' AND is_active = true
+        AND last_seen_at < NOW() - INTERVAL '72 hours';
+    `;
+
     // Check if recently ingested
     const existing = await sql`
       SELECT COUNT(*)::int AS count FROM hazard_alerts
@@ -57,7 +69,7 @@ serve(async (req) => {
     `;
     if (existing[0]?.count > 0) {
       return new Response(
-        JSON.stringify({ status: "skipped", reason: "already ingested this hour", run_id: runId }),
+        JSON.stringify({ status: "completed_cleanup", reason: "run already ingested, stale alerts cleaned", run_id: runId }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -215,6 +227,7 @@ serve(async (req) => {
           metadata = EXCLUDED.metadata,
           source_artifact = EXCLUDED.source_artifact,
           is_active = TRUE,
+          last_seen_at = NOW(),
           updated_at = NOW();
       `;
       upserted++;
