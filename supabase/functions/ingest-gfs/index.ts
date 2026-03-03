@@ -16,15 +16,24 @@ const THRESHOLDS = {
   rain_extreme_6h: 100, // mm
 };
 
+const MSLP_FLOOR = 870; // hPa — absolute minimum; anything below is rejected
+
 // Africa bounding box
 const AFRICA_BBOX = { lat_min: -35, lat_max: 40, lon_min: -25, lon_max: 55 };
 
+// ── Barometric correction: station pressure → sea-level pressure ──
+function stationToMSLP(stationHpa: number, elevationM: number, tempC = 15): number {
+  if (elevationM <= 0) return stationHpa;
+  return stationHpa * Math.pow(
+    1 + 0.0065 * elevationM / (tempC + 0.0065 * elevationM + 273.15),
+    5.257
+  );
+}
+
 function getLatestGFSRun(): { date: string; hour: string; runId: string } {
   const now = new Date();
-  // GFS runs: 00z, 06z, 12z, 18z — available ~4.5h after init
   const utcHour = now.getUTCHours();
   const runHours = [0, 6, 12, 18];
-  // Pick the most recent run that should be available (subtract 5h for processing delay)
   const availableHour = utcHour - 5;
   let selectedRun = runHours[0];
   for (const rh of runHours) {
@@ -52,8 +61,9 @@ interface GFSGridPoint {
   precip_6h?: number;
 }
 
-function detectHazards(points: GFSGridPoint[], runId: string, forecastHour: number) {
+function detectHazards(points: GFSGridPoint[], runId: string, forecastHour: number, locationName = "") {
   const hazards: any[] = [];
+  const suffix = locationName ? ` — ${locationName}` : "";
 
   for (const pt of points) {
     // Wind hazard
@@ -64,7 +74,7 @@ function detectHazards(points: GFSGridPoint[], runId: string, forecastHour: numb
           source: "gfs",
           type: "cyclone",
           severity: "extreme",
-          title: `Extreme wind ${pt.wind_speed.toFixed(1)} m/s`,
+          title: `Extreme wind ${pt.wind_speed.toFixed(1)} m/s${suffix}`,
           description: `GFS forecast: extreme wind speed of ${pt.wind_speed.toFixed(1)} m/s at f+${forecastHour}h`,
           lat: pt.lat,
           lng: pt.lon,
@@ -79,7 +89,7 @@ function detectHazards(points: GFSGridPoint[], runId: string, forecastHour: numb
           source: "gfs",
           type: "storm",
           severity: "high",
-          title: `High wind ${pt.wind_speed.toFixed(1)} m/s`,
+          title: `High wind ${pt.wind_speed.toFixed(1)} m/s${suffix}`,
           description: `GFS forecast: high wind speed of ${pt.wind_speed.toFixed(1)} m/s at f+${forecastHour}h`,
           lat: pt.lat,
           lng: pt.lon,
@@ -99,7 +109,7 @@ function detectHazards(points: GFSGridPoint[], runId: string, forecastHour: numb
           source: "gfs",
           type: "cyclone",
           severity: "extreme",
-          title: `Deep low pressure ${pt.mslp.toFixed(0)} hPa`,
+          title: `Deep low pressure ${pt.mslp.toFixed(0)} hPa${suffix}`,
           description: `GFS forecast: extremely low MSLP of ${pt.mslp.toFixed(0)} hPa at f+${forecastHour}h`,
           lat: pt.lat,
           lng: pt.lon,
@@ -114,7 +124,7 @@ function detectHazards(points: GFSGridPoint[], runId: string, forecastHour: numb
           source: "gfs",
           type: "storm",
           severity: "high",
-          title: `Low pressure ${pt.mslp.toFixed(0)} hPa`,
+          title: `Low pressure ${pt.mslp.toFixed(0)} hPa${suffix}`,
           description: `GFS forecast: low MSLP of ${pt.mslp.toFixed(0)} hPa at f+${forecastHour}h`,
           lat: pt.lat,
           lng: pt.lon,
@@ -134,7 +144,7 @@ function detectHazards(points: GFSGridPoint[], runId: string, forecastHour: numb
           source: "gfs",
           type: "flood",
           severity: "extreme",
-          title: `Extreme rainfall ${pt.precip_6h.toFixed(0)} mm/6h`,
+          title: `Extreme rainfall ${pt.precip_6h.toFixed(0)} mm/6h${suffix}`,
           description: `GFS forecast: extreme precipitation of ${pt.precip_6h.toFixed(0)} mm in 6h at f+${forecastHour}h`,
           lat: pt.lat,
           lng: pt.lon,
@@ -149,7 +159,7 @@ function detectHazards(points: GFSGridPoint[], runId: string, forecastHour: numb
           source: "gfs",
           type: "flood",
           severity: "high",
-          title: `Heavy rainfall ${pt.precip_6h.toFixed(0)} mm/6h`,
+          title: `Heavy rainfall ${pt.precip_6h.toFixed(0)} mm/6h${suffix}`,
           description: `GFS forecast: heavy precipitation of ${pt.precip_6h.toFixed(0)} mm in 6h at f+${forecastHour}h`,
           lat: pt.lat,
           lng: pt.lon,
@@ -194,8 +204,6 @@ serve(async (req) => {
       );
     }
 
-    // Fetch GFS data from NOMADS
-    // We use the JSON filter endpoint for Africa bounding box
     const forecastHours = [0, 6, 12, 24, 48, 72];
     const allHazards: any[] = [];
     const runArtifact = {
@@ -210,59 +218,24 @@ serve(async (req) => {
       ingested_at: new Date().toISOString(),
     };
 
-    for (const fh of forecastHours) {
-      const fhStr = String(fh).padStart(3, "0");
-      // NOMADS filter URL for GFS 0.25-degree
-      const url = `https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?` +
-        `file=gfs.t${hour}z.pgrb2.0p25.f${fhStr}&` +
-        `lev_10_m_above_ground=on&lev_mean_sea_level=on&` +
-        `var_UGRD=on&var_VGRD=on&var_PRMSL=on&var_APCP=on&` +
-        `leftlon=${AFRICA_BBOX.lon_min}&rightlon=${AFRICA_BBOX.lon_max}&` +
-        `toplat=${AFRICA_BBOX.lat_max}&bottomlat=${AFRICA_BBOX.lat_min}&` +
-        `dir=%2Fgfs.${date}%2F${hour}%2Fatmos`;
-
-      try {
-        const resp = await fetch(url);
-        if (!resp.ok) {
-          // GFS data might not be available yet for this forecast hour
-          console.log(`GFS f${fhStr} not available: ${resp.status}`);
-          await resp.text(); // consume body
-          continue;
-        }
-
-        // NOMADS returns GRIB2 binary — we cannot parse GRIB2 in edge functions.
-        // Instead, we use the NOMADS OpenDAP/ASCII alternative or the NOAA Weather API as a proxy.
-        // For MVP: use NOAA Weather.gov API for point-based alerts instead.
-        await resp.arrayBuffer(); // consume GRIB2 body (can't parse)
-
-        // Since GRIB2 parsing isn't feasible in edge runtime, we fall back to
-        // synthesizing from NOAA's higher-level API endpoints below.
-      } catch (fetchErr) {
-        console.log(`GFS fetch error for f${fhStr}:`, fetchErr);
-      }
-    }
-
-    // ── Fallback: Use NOAA Weather API for active alerts in Africa region ──
-    // NOAA's API covers US primarily, so for global/Africa coverage we use
-    // Open-Meteo's free GFS-backed forecast API which exposes GFS data as JSON.
+    // Sample points with elevation for barometric correction
     const samplePoints = [
-      { lat: -18.6, lon: 45.1, name: "Madagascar" },
-      { lat: 13.5, lon: 2.1, name: "Niger" },
-      { lat: -15.4, lon: 35.0, name: "Malawi" },
-      { lat: 6.5, lon: 3.4, name: "Lagos" },
-      { lat: -4.3, lon: 15.3, name: "Kinshasa" },
-      { lat: -1.3, lon: 36.8, name: "Nairobi" },
-      { lat: 9.0, lon: 38.7, name: "Addis Ababa" },
-      { lat: 14.7, lon: -17.5, name: "Dakar" },
-      { lat: -26.2, lon: 28.0, name: "Johannesburg" },
-      { lat: 30.0, lon: 31.2, name: "Cairo" },
-      { lat: 0.3, lon: 32.6, name: "Kampala" },
-      { lat: -6.8, lon: 39.3, name: "Dar es Salaam" },
+      { lat: -18.6, lon: 45.1, name: "Madagascar", elevation: 10 },
+      { lat: 13.5, lon: 2.1, name: "Niger", elevation: 220 },
+      { lat: -15.4, lon: 35.0, name: "Malawi", elevation: 780 },
+      { lat: 6.5, lon: 3.4, name: "Lagos", elevation: 10 },
+      { lat: -4.3, lon: 15.3, name: "Kinshasa", elevation: 310 },
+      { lat: -1.3, lon: 36.8, name: "Nairobi", elevation: 1661 },
+      { lat: 9.0, lon: 38.7, name: "Addis Ababa", elevation: 2355 },
+      { lat: 14.7, lon: -17.5, name: "Dakar", elevation: 10 },
+      { lat: -26.2, lon: 28.0, name: "Johannesburg", elevation: 1753 },
+      { lat: 30.0, lon: 31.2, name: "Cairo", elevation: 75 },
+      { lat: 0.3, lon: 32.6, name: "Kampala", elevation: 1190 },
+      { lat: -6.8, lon: 39.3, name: "Dar es Salaam", elevation: 15 },
     ];
 
     for (const pt of samplePoints) {
       try {
-        // Open-Meteo uses GFS as backend — returns JSON directly
         const omUrl = `https://api.open-meteo.com/v1/gfs?` +
           `latitude=${pt.lat}&longitude=${pt.lon}&` +
           `hourly=wind_speed_10m,wind_gusts_10m,surface_pressure,precipitation&` +
@@ -278,23 +251,32 @@ serve(async (req) => {
         const hourly = omData?.hourly;
         if (!hourly?.time) continue;
 
-        // Scan each forecast timestep
         for (let i = 0; i < hourly.time.length; i++) {
           const windSpeed = hourly.wind_speed_10m?.[i];
-          const windGust = hourly.wind_gusts_10m?.[i];
           const pressure = hourly.surface_pressure?.[i];
           const precip = hourly.precipitation?.[i];
-          const fh = i; // forecast hour offset
+          const fh = i;
+
+          // Apply barometric correction for elevation
+          let correctedMslp: number | undefined;
+          if (pressure != null) {
+            correctedMslp = stationToMSLP(pressure, pt.elevation);
+            // Hard floor filter — reject physically impossible values
+            if (correctedMslp < MSLP_FLOOR) {
+              console.warn(`Filtered MSLP ${correctedMslp.toFixed(0)} hPa (station ${pressure.toFixed(0)} hPa) at ${pt.name} — below ${MSLP_FLOOR} floor`);
+              correctedMslp = undefined;
+            }
+          }
 
           const gridPt: GFSGridPoint = {
             lat: pt.lat,
             lon: pt.lon,
             wind_speed: windSpeed ?? undefined,
-            mslp: pressure ?? undefined,
-            precip_6h: (i % 6 === 5 && precip !== null) ? precip * 6 : undefined, // approximate 6h accumulation
+            mslp: correctedMslp,
+            precip_6h: (i % 6 === 5 && precip !== null) ? precip * 6 : undefined,
           };
 
-          const detected = detectHazards([gridPt], runId, fh);
+          const detected = detectHazards([gridPt], runId, fh, pt.name);
           allHazards.push(...detected);
         }
       } catch (ptErr) {
