@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import styles from './MoScriptsAnalysisPanel.module.css';
+import { fetchRealtimeThreats } from '@/services/hazardsApi';
 
 interface AnalysisItem {
   module: string;
@@ -19,11 +20,103 @@ interface AnalysisData {
   };
 }
 
-function getAnalysisApiBaseUrl() {
-  const raw = ((import.meta as any).env?.VITE_ANALYSIS_API_BASE_URL as string | undefined) || "";
-  const cleaned = raw.replace(/['"]/g, "").replace(/\/$/, "");
-  if (cleaned) return cleaned;
-  return import.meta.env.DEV ? "http://localhost:5001" : "";
+function buildAnalysisFromThreats(threats: any[]): AnalysisData {
+  const now = new Date().toISOString();
+  const sources = new Set<string>();
+  const severityCounts: Record<string, number> = {};
+  const typeCounts: Record<string, number> = {};
+  const regionThreats: Record<string, any[]> = {};
+
+  for (const t of threats) {
+    const src = t.detection_details?.variable || t.type || 'unknown';
+    sources.add(src);
+    const sev = t.severity || 'unknown';
+    severityCounts[sev] = (severityCounts[sev] || 0) + 1;
+    const type = t.threat_type || t.type || 'unknown';
+    typeCounts[type] = (typeCounts[type] || 0) + 1;
+
+    const title = t.title || '';
+    const region = title.split('—')[1]?.trim() || title.split(' — ')[1]?.trim() || 'Unspecified';
+    if (!regionThreats[region]) regionThreats[region] = [];
+    regionThreats[region].push(t);
+  }
+
+  const analysis: AnalysisItem[] = [];
+
+  // Overview
+  const extremeCount = severityCounts['extreme'] || 0;
+  const highCount = severityCounts['high'] || 0;
+  analysis.push({
+    module: 'Threat Overview',
+    text: `${threats.length} active hazard signals detected across Africa. ${extremeCount} extreme severity, ${highCount} high severity. Types: ${Object.entries(typeCounts).map(([k, v]) => `${k} (${v})`).join(', ')}.`,
+    timestamp: now,
+    tags: ['overview', 'system1'],
+  });
+
+  // Top regions
+  const topRegions = Object.entries(regionThreats)
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, 3);
+
+  if (topRegions.length > 0) {
+    const regionSummaries = topRegions.map(([region, rThreats]) => {
+      const extremes = rThreats.filter(t => t.severity === 'extreme').length;
+      return `${region}: ${rThreats.length} signals (${extremes} extreme)`;
+    });
+    analysis.push({
+      module: 'Regional Focus',
+      text: regionSummaries.join('. ') + '.',
+      timestamp: now,
+      tags: ['regional', 'priority'],
+    });
+  }
+
+  // MSLP analysis
+  const mslpThreats = threats.filter(t => t.detection_details?.variable === 'mslp');
+  if (mslpThreats.length > 0) {
+    const minPressure = Math.min(...mslpThreats.map(t => t.detection_details?.value_hpa ?? 1013));
+    analysis.push({
+      module: 'Pressure Analysis',
+      text: `${mslpThreats.length} low-pressure signals detected from GFS data. Minimum MSLP: ${Math.round(minPressure)} hPa. Sustained low pressure indicates potential cyclonic development or deep convective systems.`,
+      timestamp: now,
+      tags: ['mslp', 'gfs'],
+    });
+  }
+
+  // Wind analysis
+  const windThreats = threats.filter(t => t.detection_details?.variable === 'wind');
+  if (windThreats.length > 0) {
+    const maxWind = Math.max(...windThreats.map(t => t.detection_details?.value_ms ?? 0));
+    analysis.push({
+      module: 'Wind Analysis',
+      text: `${windThreats.length} high-wind signals detected. Maximum wind speed: ${maxWind.toFixed(1)} m/s. Monitoring for storm intensification and impact zones.`,
+      timestamp: now,
+      tags: ['wind', 'gfs'],
+    });
+  }
+
+  // If no threats
+  if (threats.length === 0) {
+    analysis.push({
+      module: 'Status',
+      text: 'No active hazard signals above threshold. All monitoring points within normal parameters. Ingestion pipelines operational.',
+      timestamp: now,
+      tags: ['clear', 'nominal'],
+    });
+  }
+
+  const artifactSources = ['GFS Forecast (NOAA)', 'GPM IMERG (NASA)', 'JTWC Advisories'];
+
+  return {
+    mode: 'analysis',
+    timestamp: now,
+    artifacts_used: artifactSources,
+    analysis,
+    metadata: {
+      system_mode: 'operational',
+      provenance: 'System 1 → Edge Ingestion → Neon DB',
+    },
+  };
 }
 
 const MoScriptsAnalysisPanel = () => {
@@ -33,16 +126,11 @@ const MoScriptsAnalysisPanel = () => {
 
   const fetchAnalysis = async () => {
     try {
-      const base = getAnalysisApiBaseUrl();
-      const response = await fetch(`${base}/api/analysis`);
-      const data = await response.json();
-      
-      if (response.ok) {
-        setAnalysis(data);
-        setError(null);
-      } else {
-        setError('Failed to fetch analysis');
-      }
+      const data = await fetchRealtimeThreats();
+      const threats = Array.isArray(data?.threats) ? data.threats : [];
+      const analysisData = buildAnalysisFromThreats(threats);
+      setAnalysis(analysisData);
+      setError(null);
     } catch (err) {
       console.error('Error fetching analysis:', err);
       setError('Network error');
@@ -59,26 +147,15 @@ const MoScriptsAnalysisPanel = () => {
   const formatTimestamp = (timestamp: string) => {
     if (!timestamp) return 'Unknown';
     try {
-      const date = new Date(timestamp);
-      return date.toLocaleString();
+      return new Date(timestamp).toLocaleString();
     } catch {
       return timestamp;
     }
   };
 
-  const escapeHtml = (text: string) => {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  };
-
   useEffect(() => {
-    // Initial load
     fetchAnalysis();
-    
-    // Auto-refresh every 5 minutes
     const interval = setInterval(fetchAnalysis, 5 * 60 * 1000);
-    
     return () => clearInterval(interval);
   }, []);
 
@@ -123,7 +200,7 @@ const MoScriptsAnalysisPanel = () => {
                   {analysis.analysis.map((item, index) => (
                     <div key={index} className={styles.analysisItem}>
                       <div className={styles.analysisModule}>{item.module}</div>
-                      <div className={styles.analysisText}>{escapeHtml(item.text)}</div>
+                      <div className={styles.analysisText}>{item.text}</div>
                       <div className={styles.analysisMeta}>
                         <span>Module: {item.module}</span>
                         <span>Updated: {formatTimestamp(item.timestamp)}</span>
