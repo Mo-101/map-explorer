@@ -6,6 +6,7 @@ import MapControls from "@/components/MapControls";
 import WeatherControls from "@/components/WeatherControls";
 import BackendStatusBadge from "@/components/BackendStatusBadge";
 import SituationalTicker from "@/components/SituationalTicker";
+import ThreatDetailsPanel from "@/components/ThreatDetailsPanel";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
 import { useSituationalMarkers } from "@/hooks/useSituationalMarkers";
 import SituationalMarkersLayer from "@/components/SituationalMarkersLayer";
@@ -47,6 +48,8 @@ const Index = () => {
   const [coordinates, setCoordinates] = useState({ lng: 0, lat: 20 });
   const [mapInstance, setMapInstance] = useState<maptilersdk.Map | null>(null);
   const [terrainEnabled, setTerrainEnabled] = useState(false);
+  const [selectedThreat, setSelectedThreat] = useState<any>(null);
+  const [allThreats, setAllThreats] = useState<any[]>([]);
 
   const weather = useWeatherLayers(mapInstance);
   const situational = useSituationalMarkers(60_000);
@@ -65,6 +68,7 @@ const Index = () => {
       try {
         const data = await fetchRealtimeThreats();
         const threats = normalizeThreats(data);
+        setAllThreats(threats);
         if (threats.length > 0) {
           await emit('onThreatsUpdate', { threats, mapInstance });
         }
@@ -121,9 +125,13 @@ const Index = () => {
     }
   }, [mapInstance]);
 
+  const handleThreatSelect = useCallback((threat: any) => {
+    setSelectedThreat(threat);
+  }, []);
+
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-background">
-      <SituationalTicker mapInstance={mapInstance} />
+      <SituationalTicker mapInstance={mapInstance} onThreatSelect={handleThreatSelect} />
       <MapView
         onZoomChange={setZoom}
         onCenterChange={(lng, lat) => setCoordinates({ lng, lat })}
@@ -159,6 +167,12 @@ const Index = () => {
           pointerValue={weather.pointerValue}
         />
       )}
+
+      <ThreatDetailsPanel
+        threat={selectedThreat}
+        onClose={() => setSelectedThreat(null)}
+        allThreats={allThreats}
+      />
     </div>
   );
 };
