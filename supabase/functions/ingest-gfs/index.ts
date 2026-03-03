@@ -17,6 +17,8 @@ const THRESHOLDS = {
 };
 
 const MSLP_FLOOR = 870; // hPa — absolute minimum; anything below is rejected
+const TEMPORAL_PERSISTENCE = 3; // consecutive forecast hours required before alerting
+const STALE_HOURS = 72; // deactivate alerts older than this
 
 // Africa bounding box
 const AFRICA_BBOX = { lat_min: -35, lat_max: 40, lon_min: -25, lon_max: 55 };
@@ -61,42 +63,52 @@ interface GFSGridPoint {
   precip_6h?: number;
 }
 
-function detectHazards(points: GFSGridPoint[], runId: string, forecastHour: number, locationName = "") {
-  const hazards: any[] = [];
+interface RawDetection {
+  external_id: string;
+  source: string;
+  type: string;
+  severity: string;
+  title: string;
+  description: string;
+  lat: number;
+  lng: number;
+  intensity: number;
+  data_source_run_id: string;
+  forecast_hour: number;
+  source_artifact: Record<string, any>;
+  location_key: string; // for clustering
+}
+
+function detectHazards(points: GFSGridPoint[], runId: string, forecastHour: number, locationName = ""): RawDetection[] {
+  const hazards: RawDetection[] = [];
   const suffix = locationName ? ` — ${locationName}` : "";
 
   for (const pt of points) {
+    const locKey = `${pt.lat}_${pt.lon}`;
+
     // Wind hazard
     if (pt.wind_speed !== undefined) {
       if (pt.wind_speed >= THRESHOLDS.wind_extreme) {
         hazards.push({
-          external_id: `${runId}_f${forecastHour}_wind_${pt.lat}_${pt.lon}`,
-          source: "gfs",
-          type: "cyclone",
-          severity: "extreme",
+          external_id: `${runId}_f${forecastHour}_wind_${locKey}`,
+          source: "gfs", type: "cyclone", severity: "extreme",
           title: `Extreme wind ${pt.wind_speed.toFixed(1)} m/s${suffix}`,
           description: `GFS forecast: extreme wind speed of ${pt.wind_speed.toFixed(1)} m/s at f+${forecastHour}h`,
-          lat: pt.lat,
-          lng: pt.lon,
-          intensity: pt.wind_speed,
-          data_source_run_id: runId,
-          forecast_hour: forecastHour,
-          source_artifact: { variable: "wind_10m", value_ms: pt.wind_speed, threshold: THRESHOLDS.wind_extreme, u10: pt.wind_u10, v10: pt.wind_v10 },
+          lat: pt.lat, lng: pt.lon, intensity: pt.wind_speed,
+          data_source_run_id: runId, forecast_hour: forecastHour,
+          source_artifact: { variable: "wind_10m", value_ms: pt.wind_speed, threshold: THRESHOLDS.wind_extreme },
+          location_key: locKey,
         });
       } else if (pt.wind_speed >= THRESHOLDS.wind_high) {
         hazards.push({
-          external_id: `${runId}_f${forecastHour}_wind_${pt.lat}_${pt.lon}`,
-          source: "gfs",
-          type: "storm",
-          severity: "high",
+          external_id: `${runId}_f${forecastHour}_wind_${locKey}`,
+          source: "gfs", type: "storm", severity: "high",
           title: `High wind ${pt.wind_speed.toFixed(1)} m/s${suffix}`,
           description: `GFS forecast: high wind speed of ${pt.wind_speed.toFixed(1)} m/s at f+${forecastHour}h`,
-          lat: pt.lat,
-          lng: pt.lon,
-          intensity: pt.wind_speed,
-          data_source_run_id: runId,
-          forecast_hour: forecastHour,
-          source_artifact: { variable: "wind_10m", value_ms: pt.wind_speed, threshold: THRESHOLDS.wind_high, u10: pt.wind_u10, v10: pt.wind_v10 },
+          lat: pt.lat, lng: pt.lon, intensity: pt.wind_speed,
+          data_source_run_id: runId, forecast_hour: forecastHour,
+          source_artifact: { variable: "wind_10m", value_ms: pt.wind_speed, threshold: THRESHOLDS.wind_high },
+          location_key: locKey,
         });
       }
     }
@@ -105,33 +117,25 @@ function detectHazards(points: GFSGridPoint[], runId: string, forecastHour: numb
     if (pt.mslp !== undefined) {
       if (pt.mslp <= THRESHOLDS.mslp_extreme) {
         hazards.push({
-          external_id: `${runId}_f${forecastHour}_mslp_${pt.lat}_${pt.lon}`,
-          source: "gfs",
-          type: "cyclone",
-          severity: "extreme",
+          external_id: `${runId}_f${forecastHour}_mslp_${locKey}`,
+          source: "gfs", type: "cyclone", severity: "extreme",
           title: `Deep low pressure ${pt.mslp.toFixed(0)} hPa${suffix}`,
           description: `GFS forecast: extremely low MSLP of ${pt.mslp.toFixed(0)} hPa at f+${forecastHour}h`,
-          lat: pt.lat,
-          lng: pt.lon,
-          intensity: 1013 - pt.mslp,
-          data_source_run_id: runId,
-          forecast_hour: forecastHour,
+          lat: pt.lat, lng: pt.lon, intensity: 1013 - pt.mslp,
+          data_source_run_id: runId, forecast_hour: forecastHour,
           source_artifact: { variable: "mslp", value_hpa: pt.mslp, threshold: THRESHOLDS.mslp_extreme },
+          location_key: locKey,
         });
       } else if (pt.mslp <= THRESHOLDS.mslp_high) {
         hazards.push({
-          external_id: `${runId}_f${forecastHour}_mslp_${pt.lat}_${pt.lon}`,
-          source: "gfs",
-          type: "storm",
-          severity: "high",
+          external_id: `${runId}_f${forecastHour}_mslp_${locKey}`,
+          source: "gfs", type: "storm", severity: "high",
           title: `Low pressure ${pt.mslp.toFixed(0)} hPa${suffix}`,
           description: `GFS forecast: low MSLP of ${pt.mslp.toFixed(0)} hPa at f+${forecastHour}h`,
-          lat: pt.lat,
-          lng: pt.lon,
-          intensity: 1013 - pt.mslp,
-          data_source_run_id: runId,
-          forecast_hour: forecastHour,
+          lat: pt.lat, lng: pt.lon, intensity: 1013 - pt.mslp,
+          data_source_run_id: runId, forecast_hour: forecastHour,
           source_artifact: { variable: "mslp", value_hpa: pt.mslp, threshold: THRESHOLDS.mslp_high },
+          location_key: locKey,
         });
       }
     }
@@ -140,39 +144,142 @@ function detectHazards(points: GFSGridPoint[], runId: string, forecastHour: numb
     if (pt.precip_6h !== undefined) {
       if (pt.precip_6h >= THRESHOLDS.rain_extreme_6h) {
         hazards.push({
-          external_id: `${runId}_f${forecastHour}_rain_${pt.lat}_${pt.lon}`,
-          source: "gfs",
-          type: "flood",
-          severity: "extreme",
+          external_id: `${runId}_f${forecastHour}_rain_${locKey}`,
+          source: "gfs", type: "flood", severity: "extreme",
           title: `Extreme rainfall ${pt.precip_6h.toFixed(0)} mm/6h${suffix}`,
           description: `GFS forecast: extreme precipitation of ${pt.precip_6h.toFixed(0)} mm in 6h at f+${forecastHour}h`,
-          lat: pt.lat,
-          lng: pt.lon,
-          intensity: pt.precip_6h,
-          data_source_run_id: runId,
-          forecast_hour: forecastHour,
+          lat: pt.lat, lng: pt.lon, intensity: pt.precip_6h,
+          data_source_run_id: runId, forecast_hour: forecastHour,
           source_artifact: { variable: "precip_6h", value_mm: pt.precip_6h, threshold: THRESHOLDS.rain_extreme_6h },
+          location_key: locKey,
         });
       } else if (pt.precip_6h >= THRESHOLDS.rain_high_6h) {
         hazards.push({
-          external_id: `${runId}_f${forecastHour}_rain_${pt.lat}_${pt.lon}`,
-          source: "gfs",
-          type: "flood",
-          severity: "high",
+          external_id: `${runId}_f${forecastHour}_rain_${locKey}`,
+          source: "gfs", type: "flood", severity: "high",
           title: `Heavy rainfall ${pt.precip_6h.toFixed(0)} mm/6h${suffix}`,
           description: `GFS forecast: heavy precipitation of ${pt.precip_6h.toFixed(0)} mm in 6h at f+${forecastHour}h`,
-          lat: pt.lat,
-          lng: pt.lon,
-          intensity: pt.precip_6h,
-          data_source_run_id: runId,
-          forecast_hour: forecastHour,
+          lat: pt.lat, lng: pt.lon, intensity: pt.precip_6h,
+          data_source_run_id: runId, forecast_hour: forecastHour,
           source_artifact: { variable: "precip_6h", value_mm: pt.precip_6h, threshold: THRESHOLDS.rain_high_6h },
+          location_key: locKey,
         });
       }
     }
   }
 
   return hazards;
+}
+
+// ── Temporal persistence filter ──
+// Groups detections by (location, hazard_variable) and only keeps clusters
+// where the condition persists for TEMPORAL_PERSISTENCE+ consecutive hours.
+// Emits a single representative alert per cluster (peak intensity).
+function applyTemporalFilter(allDetections: RawDetection[]): RawDetection[] {
+  // Group by location + variable type
+  const groups = new Map<string, RawDetection[]>();
+  for (const d of allDetections) {
+    const variable = d.source_artifact?.variable || "unknown";
+    const key = `${d.location_key}_${variable}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(d);
+  }
+
+  const result: RawDetection[] = [];
+
+  for (const [, detections] of groups) {
+    // Sort by forecast hour
+    detections.sort((a, b) => a.forecast_hour - b.forecast_hour);
+
+    // Find consecutive runs
+    let runStart = 0;
+    for (let i = 1; i <= detections.length; i++) {
+      const gap = i < detections.length
+        ? detections[i].forecast_hour - detections[i - 1].forecast_hour
+        : Infinity;
+
+      // If gap > 1 hour, end current run
+      if (gap > 1) {
+        const runLength = i - runStart;
+        if (runLength >= TEMPORAL_PERSISTENCE) {
+          // Pick peak intensity detection from this run
+          const run = detections.slice(runStart, i);
+          const peak = run.reduce((best, d) => d.intensity > best.intensity ? d : best, run[0]);
+
+          // Create a consolidated alert
+          const fhMin = run[0].forecast_hour;
+          const fhMax = run[run.length - 1].forecast_hour;
+          result.push({
+            ...peak,
+            external_id: peak.external_id.replace(/_f\d+_/, `_f${fhMin}-${fhMax}_`),
+            description: `${peak.description} (persists f+${fhMin}h to f+${fhMax}h, ${runLength} hours)`,
+            source_artifact: {
+              ...peak.source_artifact,
+              persistence_hours: runLength,
+              forecast_range: [fhMin, fhMax],
+            },
+          });
+        }
+        runStart = i;
+      }
+    }
+  }
+
+  return result;
+}
+
+// ── Expanded sample points: 35 strategic locations across Africa ──
+const SAMPLE_POINTS = [
+  // East Africa
+  { lat: -1.3, lon: 36.8, name: "Nairobi", elevation: 1661 },
+  { lat: 9.0, lon: 38.7, name: "Addis Ababa", elevation: 2355 },
+  { lat: 0.3, lon: 32.6, name: "Kampala", elevation: 1190 },
+  { lat: -6.8, lon: 39.3, name: "Dar es Salaam", elevation: 15 },
+  { lat: 2.0, lon: 45.3, name: "Mogadishu", elevation: 10 },
+  { lat: -1.9, lon: 29.9, name: "Kigali", elevation: 1567 },
+  { lat: -3.4, lon: 29.4, name: "Bujumbura", elevation: 774 },
+  // Southern Africa
+  { lat: -26.2, lon: 28.0, name: "Johannesburg", elevation: 1753 },
+  { lat: -15.4, lon: 35.0, name: "Lilongwe", elevation: 1050 },
+  { lat: -15.4, lon: 28.3, name: "Lusaka", elevation: 1280 },
+  { lat: -17.8, lon: 31.0, name: "Harare", elevation: 1490 },
+  { lat: -25.9, lon: 32.6, name: "Maputo", elevation: 47 },
+  { lat: -8.8, lon: 13.2, name: "Luanda", elevation: 73 },
+  // West Africa
+  { lat: 6.5, lon: 3.4, name: "Lagos", elevation: 10 },
+  { lat: 9.1, lon: 7.5, name: "Abuja", elevation: 476 },
+  { lat: 14.7, lon: -17.5, name: "Dakar", elevation: 10 },
+  { lat: 5.6, lon: -0.2, name: "Accra", elevation: 61 },
+  { lat: 12.4, lon: -1.5, name: "Ouagadougou", elevation: 305 },
+  { lat: 12.6, lon: -8.0, name: "Bamako", elevation: 350 },
+  { lat: 9.5, lon: -13.7, name: "Conakry", elevation: 13 },
+  { lat: 6.3, lon: -10.8, name: "Monrovia", elevation: 8 },
+  // North Africa
+  { lat: 30.0, lon: 31.2, name: "Cairo", elevation: 75 },
+  { lat: 36.8, lon: 3.1, name: "Algiers", elevation: 25 },
+  { lat: 36.8, lon: 10.2, name: "Tunis", elevation: 10 },
+  { lat: 32.9, lon: 13.2, name: "Tripoli", elevation: 21 },
+  { lat: 15.6, lon: 32.5, name: "Khartoum", elevation: 382 },
+  // Central Africa
+  { lat: -4.3, lon: 15.3, name: "Kinshasa", elevation: 310 },
+  { lat: 3.9, lon: 11.5, name: "Yaoundé", elevation: 726 },
+  { lat: 4.4, lon: 18.6, name: "Bangui", elevation: 369 },
+  // Sahel
+  { lat: 13.5, lon: 2.1, name: "Niamey", elevation: 220 },
+  { lat: 12.1, lon: 15.0, name: "N'Djamena", elevation: 298 },
+  // Islands & Indian Ocean
+  { lat: -18.6, lon: 45.1, name: "Madagascar West", elevation: 10 },
+  { lat: -18.9, lon: 47.5, name: "Antananarivo", elevation: 1276 },
+  { lat: -11.7, lon: 43.3, name: "Moroni", elevation: 29 },
+  { lat: -20.2, lon: 57.5, name: "Port Louis", elevation: 55 },
+];
+
+// Batch fetch helper with concurrency limit
+async function fetchBatch<T>(items: T[], fn: (item: T) => Promise<void>, concurrency = 5): Promise<void> {
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    await Promise.allSettled(batch.map(fn));
+  }
 }
 
 serve(async (req) => {
@@ -204,8 +311,6 @@ serve(async (req) => {
       );
     }
 
-    const forecastHours = [0, 6, 12, 24, 48, 72];
-    const allHazards: any[] = [];
     const runArtifact = {
       source: "noaa_gfs",
       run_id: runId,
@@ -213,28 +318,16 @@ serve(async (req) => {
       init_hour: hour,
       resolution: "0.25deg",
       bbox: AFRICA_BBOX,
-      forecast_hours: forecastHours,
       thresholds: THRESHOLDS,
+      temporal_persistence: TEMPORAL_PERSISTENCE,
+      sample_points: SAMPLE_POINTS.length,
       ingested_at: new Date().toISOString(),
     };
 
-    // Sample points with elevation for barometric correction
-    const samplePoints = [
-      { lat: -18.6, lon: 45.1, name: "Madagascar", elevation: 10 },
-      { lat: 13.5, lon: 2.1, name: "Niger", elevation: 220 },
-      { lat: -15.4, lon: 35.0, name: "Malawi", elevation: 780 },
-      { lat: 6.5, lon: 3.4, name: "Lagos", elevation: 10 },
-      { lat: -4.3, lon: 15.3, name: "Kinshasa", elevation: 310 },
-      { lat: -1.3, lon: 36.8, name: "Nairobi", elevation: 1661 },
-      { lat: 9.0, lon: 38.7, name: "Addis Ababa", elevation: 2355 },
-      { lat: 14.7, lon: -17.5, name: "Dakar", elevation: 10 },
-      { lat: -26.2, lon: 28.0, name: "Johannesburg", elevation: 1753 },
-      { lat: 30.0, lon: 31.2, name: "Cairo", elevation: 75 },
-      { lat: 0.3, lon: 32.6, name: "Kampala", elevation: 1190 },
-      { lat: -6.8, lon: 39.3, name: "Dar es Salaam", elevation: 15 },
-    ];
+    // Collect all raw detections across all points
+    const allDetections: RawDetection[] = [];
 
-    for (const pt of samplePoints) {
+    await fetchBatch(SAMPLE_POINTS, async (pt) => {
       try {
         const omUrl = `https://api.open-meteo.com/v1/gfs?` +
           `latitude=${pt.lat}&longitude=${pt.lon}&` +
@@ -244,26 +337,23 @@ serve(async (req) => {
         const omResp = await fetch(omUrl);
         if (!omResp.ok) {
           await omResp.text();
-          continue;
+          return;
         }
 
         const omData = await omResp.json();
         const hourly = omData?.hourly;
-        if (!hourly?.time) continue;
+        if (!hourly?.time) return;
 
         for (let i = 0; i < hourly.time.length; i++) {
           const windSpeed = hourly.wind_speed_10m?.[i];
           const pressure = hourly.surface_pressure?.[i];
           const precip = hourly.precipitation?.[i];
-          const fh = i;
 
           // Apply barometric correction for elevation
           let correctedMslp: number | undefined;
           if (pressure != null) {
             correctedMslp = stationToMSLP(pressure, pt.elevation);
-            // Hard floor filter — reject physically impossible values
             if (correctedMslp < MSLP_FLOOR) {
-              console.warn(`Filtered MSLP ${correctedMslp.toFixed(0)} hPa (station ${pressure.toFixed(0)} hPa) at ${pt.name} — below ${MSLP_FLOOR} floor`);
               correctedMslp = undefined;
             }
           }
@@ -276,17 +366,21 @@ serve(async (req) => {
             precip_6h: (i % 6 === 5 && precip !== null) ? precip * 6 : undefined,
           };
 
-          const detected = detectHazards([gridPt], runId, fh, pt.name);
-          allHazards.push(...detected);
+          const detected = detectHazards([gridPt], runId, i, pt.name);
+          allDetections.push(...detected);
         }
       } catch (ptErr) {
         console.log(`Open-Meteo error for ${pt.name}:`, ptErr);
       }
-    }
+    }, 5);
+
+    // ── Apply temporal persistence filter ──
+    const filtered = applyTemporalFilter(allDetections);
+    console.log(`[ingest-gfs] Raw detections: ${allDetections.length}, after temporal filter: ${filtered.length}`);
 
     // Deduplicate by external_id (keep highest severity)
-    const deduped = new Map<string, any>();
-    for (const h of allHazards) {
+    const deduped = new Map<string, RawDetection>();
+    for (const h of filtered) {
       const existing = deduped.get(h.external_id);
       if (!existing || h.severity === "extreme") {
         deduped.set(h.external_id, h);
@@ -313,15 +407,32 @@ serve(async (req) => {
       upserted++;
     }
 
+    // ── Stale alert cleanup: deactivate GFS alerts older than 72h ──
+    const staleResult = await sql`
+      UPDATE hazard_alerts
+      SET is_active = false
+      WHERE source = 'gfs'
+        AND is_active = true
+        AND (
+          updated_at < NOW() - INTERVAL '${STALE_HOURS} hours'
+          OR (data_source_run_id IS NOT NULL AND data_source_run_id != ${runId})
+        );
+    `;
+    const staleCount = (staleResult as any)?.length ?? 0;
+    console.log(`[ingest-gfs] Stale cleanup: deactivated alerts from previous runs`);
+
     return new Response(
       JSON.stringify({
         status: "completed",
         source: "gfs_via_open_meteo",
         run_id: runId,
-        points_scanned: samplePoints.length,
-        hazards_detected: finalHazards.length,
+        points_scanned: SAMPLE_POINTS.length,
+        raw_detections: allDetections.length,
+        after_temporal_filter: filtered.length,
         hazards_upserted: upserted,
+        stale_deactivated: staleCount,
         thresholds: THRESHOLDS,
+        temporal_persistence: TEMPORAL_PERSISTENCE,
         run_artifact: runArtifact,
         timestamp: new Date().toISOString(),
       }),

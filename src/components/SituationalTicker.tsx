@@ -9,9 +9,10 @@ interface TickerItem {
   severity: 'info' | 'warning' | 'critical';
   lat?: number;
   lng?: number;
+  threatData?: any; // raw threat for details panel
 }
 
-// Static African city lookup for coordinate-based region fallback
+// Expanded African city lookup matching the 35 monitoring points
 const AFRICAN_CITIES = [
   { name: 'Lagos', lat: 6.5, lng: 3.4 },
   { name: 'Nairobi', lat: -1.3, lng: 36.8 },
@@ -22,12 +23,27 @@ const AFRICAN_CITIES = [
   { name: 'Dar es Salaam', lat: -6.8, lng: 39.3 },
   { name: 'Dakar', lat: 14.7, lng: -17.5 },
   { name: 'Kampala', lat: 0.3, lng: 32.6 },
-  { name: 'Madagascar', lat: -18.6, lng: 45.1 },
-  { name: 'Malawi', lat: -15.4, lng: 35.0 },
-  { name: 'Niger', lat: 13.5, lng: 2.1 },
-  { name: 'Mozambique Channel', lat: -15.0, lng: 42.0 },
-  { name: 'Horn of Africa', lat: 5.0, lng: 45.0 },
-  { name: 'Gulf of Guinea', lat: 3.0, lng: 0.0 },
+  { name: 'Mogadishu', lat: 2.0, lng: 45.3 },
+  { name: 'Kigali', lat: -1.9, lng: 29.9 },
+  { name: 'Lusaka', lat: -15.4, lng: 28.3 },
+  { name: 'Harare', lat: -17.8, lng: 31.0 },
+  { name: 'Maputo', lat: -25.9, lng: 32.6 },
+  { name: 'Luanda', lat: -8.8, lng: 13.2 },
+  { name: 'Abuja', lat: 9.1, lng: 7.5 },
+  { name: 'Accra', lat: 5.6, lng: -0.2 },
+  { name: 'Ouagadougou', lat: 12.4, lng: -1.5 },
+  { name: 'Bamako', lat: 12.6, lng: -8.0 },
+  { name: 'Conakry', lat: 9.5, lng: -13.7 },
+  { name: 'Algiers', lat: 36.8, lng: 3.1 },
+  { name: 'Tunis', lat: 36.8, lng: 10.2 },
+  { name: 'Tripoli', lat: 32.9, lng: 13.2 },
+  { name: 'Khartoum', lat: 15.6, lng: 32.5 },
+  { name: 'Antananarivo', lat: -18.9, lng: 47.5 },
+  { name: 'Lilongwe', lat: -15.4, lng: 35.0 },
+  { name: 'Yaoundé', lat: 3.9, lng: 11.5 },
+  { name: "N'Djamena", lat: 12.1, lng: 15.0 },
+  { name: 'Port Louis', lat: -20.2, lng: 57.5 },
+  { name: 'Niamey', lat: 13.5, lng: 2.1 },
 ];
 
 function nearestCity(lat: number, lng: number): string {
@@ -42,7 +58,6 @@ function nearestCity(lat: number, lng: number): string {
 
 function extractRegion(threat: any): string {
   const title = threat.title || '';
-  // Try title split on em-dash or regular dash
   const parts = title.split('—');
   if (parts.length > 1) {
     const region = parts[parts.length - 1].trim();
@@ -53,7 +68,6 @@ function extractRegion(threat: any): string {
     const region = parts2[parts2.length - 1].trim();
     if (region && region !== 'Unspecified') return region;
   }
-  // Coordinate fallback
   const lat = Number(threat.center_lat ?? threat.lat);
   const lng = Number(threat.center_lng ?? threat.lng ?? threat.lon);
   if (Number.isFinite(lat) && Number.isFinite(lng)) {
@@ -88,10 +102,9 @@ function buildTickerItems(threats: any[]): TickerItem[] {
     severity: extremeCount > 0 ? 'critical' : highCount > 0 ? 'warning' : 'info',
   });
 
-  // Top regions with coordinates
   const topRegions = Object.entries(regionThreats)
     .sort((a, b) => b[1].length - a[1].length)
-    .slice(0, 3);
+    .slice(0, 5);
 
   for (const [region, rThreats] of topRegions) {
     const extremes = rThreats.filter(t => t.severity === 'extreme').length;
@@ -104,10 +117,10 @@ function buildTickerItems(threats: any[]): TickerItem[] {
       severity: extremes > 0 ? 'critical' : 'warning',
       lat: Number.isFinite(lat) ? lat : undefined,
       lng: Number.isFinite(lng) ? lng : undefined,
+      threatData: rep,
     });
   }
 
-  // MSLP
   const mslpThreats = threats.filter(t => t.detection_details?.variable === 'mslp');
   if (mslpThreats.length > 0) {
     const minPressure = Math.min(...mslpThreats.map(t => t.detection_details?.value_hpa ?? 1013));
@@ -118,10 +131,10 @@ function buildTickerItems(threats: any[]): TickerItem[] {
       severity: minPressure < 990 ? 'critical' : 'warning',
       lat: Number(rep?.center_lat ?? rep?.lat) || undefined,
       lng: Number(rep?.center_lng ?? rep?.lng ?? rep?.lon) || undefined,
+      threatData: rep,
     });
   }
 
-  // Wind
   const windThreats = threats.filter(t => t.detection_details?.variable === 'wind');
   if (windThreats.length > 0) {
     const maxWind = Math.max(...windThreats.map(t => t.detection_details?.value_ms ?? 0));
@@ -132,6 +145,7 @@ function buildTickerItems(threats: any[]): TickerItem[] {
       severity: maxWind > 25 ? 'critical' : 'warning',
       lat: Number(rep?.center_lat ?? rep?.lat) || undefined,
       lng: Number(rep?.center_lng ?? rep?.lng ?? rep?.lon) || undefined,
+      threatData: rep,
     });
   }
 
@@ -146,7 +160,7 @@ const severityDot: Record<string, string> = {
 
 // AI summary cache
 let cachedSummary: { text: string; ts: number } | null = null;
-const AI_CACHE_MS = 5 * 60 * 1000; // 5 minutes
+const AI_CACHE_MS = 5 * 60 * 1000;
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID || "tciktazfwokzbxnutpvh";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || `https://${PROJECT_ID}.supabase.co`;
@@ -178,9 +192,10 @@ async function fetchAISummary(threats: any[]): Promise<string | null> {
 
 interface SituationalTickerProps {
   mapInstance?: maptilersdk.Map | null;
+  onThreatSelect?: (threat: any) => void;
 }
 
-const SituationalTicker = ({ mapInstance }: SituationalTickerProps) => {
+const SituationalTicker = ({ mapInstance, onThreatSelect }: SituationalTickerProps) => {
   const [items, setItems] = useState<TickerItem[]>([]);
   const [prevCount, setPrevCount] = useState<number | null>(null);
   const tickerRef = useRef<HTMLDivElement>(null);
@@ -192,12 +207,10 @@ const SituationalTicker = ({ mapInstance }: SituationalTickerProps) => {
       const threats = Array.isArray(data?.threats) ? data.threats : [];
       const newItems = buildTickerItems(threats);
 
-      // Fetch AI summary in parallel (non-blocking)
       if (threats.length > 0) {
         fetchAISummary(threats).then(summary => {
           if (summary) {
             setItems(prev => {
-              // Remove existing AI BRIEF if present, prepend new one
               const filtered = prev.filter(i => i.module !== 'AI BRIEF');
               return [{ module: 'AI BRIEF', text: summary, severity: 'info' as const }, ...filtered];
             });
@@ -207,7 +220,6 @@ const SituationalTicker = ({ mapInstance }: SituationalTickerProps) => {
 
       setItems(newItems);
 
-      // Toast for critical changes
       const newCount = threats.length;
       if (prevCount !== null && newCount !== prevCount) {
         const diff = newCount - prevCount;
@@ -249,9 +261,28 @@ const SituationalTicker = ({ mapInstance }: SituationalTickerProps) => {
   }, [fetchAndBuild]);
 
   const handleItemClick = useCallback((item: TickerItem) => {
-    if (!mapInstance || item.lat == null || item.lng == null) return;
-    mapInstance.flyTo({ center: [item.lng, item.lat], zoom: 6, duration: 1500 });
-  }, [mapInstance]);
+    if (item.lat != null && item.lng != null && mapInstance) {
+      mapInstance.flyTo({ center: [item.lng, item.lat], zoom: 6, duration: 1500 });
+    }
+    // Open details panel if threat data available
+    if (item.threatData && onThreatSelect) {
+      const t = item.threatData;
+      onThreatSelect({
+        id: t.id || t.external_id || 'unknown',
+        title: t.title || item.text,
+        type: t.threat_type || t.type || 'unknown',
+        severity: t.severity || 'high',
+        description: t.description || item.text,
+        lat: Number(t.center_lat ?? t.lat ?? item.lat ?? 0),
+        lng: Number(t.center_lng ?? t.lng ?? t.lon ?? item.lng ?? 0),
+        intensity: t.intensity ?? 0,
+        forecast_hour: t.forecast_hour,
+        source_artifact: t.source_artifact || t.detection_details,
+        data_source_run_id: t.data_source_run_id,
+        updated_at: t.updated_at,
+      });
+    }
+  }, [mapInstance, onThreatSelect]);
 
   if (items.length === 0) return null;
 
@@ -272,7 +303,7 @@ const SituationalTicker = ({ mapInstance }: SituationalTickerProps) => {
           className="flex items-center gap-8 whitespace-nowrap animate-ticker"
         >
           {displayItems.map((item, i) => {
-            const clickable = item.lat != null && item.lng != null;
+            const clickable = (item.lat != null && item.lng != null) || item.threatData;
             return (
               <span
                 key={i}
