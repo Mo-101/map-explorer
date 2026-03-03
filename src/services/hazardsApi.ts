@@ -46,3 +46,7 @@ export async function fetchSmokeTest() {
     return { database: "error", error: String(e) };
   }
 }
+
+export async function triggerUSGSIngestion() {
+  return await callEdgeFunction("ingest-usgs", { method: "POST" });
+}
