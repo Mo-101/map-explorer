@@ -8,3 +8,12 @@ verify_jwt = false
 
 [functions.ingest-jtwc]
 verify_jwt = false
+
+[functions.neon-threats]
+verify_jwt = false
+
+[functions.neon-health]
+verify_jwt = false
+
+[functions.ai-situational-summary]
+verify_jwt = false
