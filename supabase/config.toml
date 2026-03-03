@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.ingest-usgs]
 verify_jwt = false
+
+[functions.ingest-who-don]
+verify_jwt = false

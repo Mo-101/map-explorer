@@ -50,3 +50,7 @@ export async function fetchSmokeTest() {
 export async function triggerUSGSIngestion() {
   return await callEdgeFunction("ingest-usgs", { method: "POST" });
 }
+
+export async function triggerWHODONIngestion() {
+  return await callEdgeFunction("ingest-who-don", { method: "POST" });
+}
