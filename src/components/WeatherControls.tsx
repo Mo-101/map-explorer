@@ -1,4 +1,4 @@
-import { Play, Pause, CloudRain } from "lucide-react";
+import { Play, Pause, CloudRain, Droplets } from "lucide-react";
 import type { WeatherLayerType } from "@/hooks/useWeatherLayers";
 import MoScriptsTooltip from "@/components/MoScriptsTooltip";
 
@@ -28,6 +28,8 @@ interface WeatherControlsProps {
   onToggleIMERG?: () => void;
   imergMode?: '24h' | '72h';
   onChangeIMERGMode?: (mode: '24h' | '72h') => void;
+  copernicusFloodEnabled?: boolean;
+  onToggleCopernicusFlood?: () => void;
 }
 
 const WeatherControls = ({
@@ -47,6 +49,8 @@ const WeatherControls = ({
   onToggleIMERG,
   imergMode,
   onChangeIMERGMode,
+  copernicusFloodEnabled,
+  onToggleCopernicusFlood,
 }: WeatherControlsProps) => {
   return (
     <>
@@ -130,6 +134,24 @@ const WeatherControls = ({
               </div>
             )}
           </div>
+        )}
+
+        {/* Copernicus Flood AOIs */}
+        {onToggleCopernicusFlood && (
+          <MoScriptsTooltip title="Copernicus EMS" description="Copernicus Emergency Management Service flood assessment polygons (EMSR867). Shows validated flood-affected areas for comparison with automated alerts." position="right">
+            <button
+              type="button"
+              onClick={onToggleCopernicusFlood}
+              className={`mt-2 px-3 py-1.5 text-xs font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                copernicusFloodEnabled
+                  ? "neu-btn-active text-primary"
+                  : "neu-btn text-foreground/80 hover:text-foreground"
+              }`}
+            >
+              <Droplets size={12} />
+              EMS Flood
+            </button>
+          </MoScriptsTooltip>
         )}
       </div>
 
