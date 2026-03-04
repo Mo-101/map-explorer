@@ -8,6 +8,7 @@ import BackendStatusBadge from "@/components/BackendStatusBadge";
 import SituationalTicker from "@/components/SituationalTicker";
 import ThreatDetailsPanel from "@/components/ThreatDetailsPanel";
 import IMERGRainfallLayer from "@/components/IMERGRainfallLayer";
+import MapLegend from "@/components/MapLegend";
 import CopernicusFloodLayer from "@/components/CopernicusFloodLayer";
 import ClusterPolygonLayer from "@/components/ClusterPolygonLayer";
 import ClusterStatsBadge from "@/components/ClusterStatsBadge";
@@ -210,6 +211,14 @@ const Index = () => {
       />
 
       <GdacsRiskSummary />
+
+      <MapLegend
+        threatCount={allThreats.length}
+        clusterCount={clusters.length}
+        imergEnabled={imergEnabled}
+        copernicusEnabled={copernicusFloodEnabled}
+        weatherLayer={weather.activeLayer}
+      />
 
       <ThreatDetailsPanel
         threat={selectedThreat}

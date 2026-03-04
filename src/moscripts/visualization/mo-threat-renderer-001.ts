@@ -72,24 +72,19 @@ function createPulsingCircle(
   
   const sourceId = `threat-${threat.id}`;
   const layerId = `threat-layer-${threat.id}`;
+  const glowLayerId = `threat-glow-${threat.id}`;
   
   // Remove existing source/layer if present
-  if (map.getLayer(layerId)) {
-    map.removeLayer(layerId);
-  }
-  if (map.getSource(sourceId)) {
-    map.removeSource(sourceId);
-  }
+  if (map.getLayer(glowLayerId)) map.removeLayer(glowLayerId);
+  if (map.getLayer(layerId)) map.removeLayer(layerId);
+  if (map.getSource(sourceId)) map.removeSource(sourceId);
   
   // Add source
   map.addSource(sourceId, {
     type: 'geojson',
     data: {
       type: 'Feature',
-      geometry: {
-        type: 'Point',
-        coordinates: [lng, lat]
-      },
+      geometry: { type: 'Point', coordinates: [lng, lat] },
       properties: {
         id: threat.id,
         type: threat.threat_type,
@@ -99,7 +94,20 @@ function createPulsingCircle(
     }
   });
   
-  // Add pulsing circle layer
+  // Outer glow ring (static, no animation)
+  map.addLayer({
+    id: glowLayerId,
+    type: 'circle',
+    source: sourceId,
+    paint: {
+      'circle-radius': size + 6,
+      'circle-color': color,
+      'circle-opacity': 0.15,
+      'circle-stroke-width': 0,
+    }
+  });
+  
+  // Main circle layer (static - no blinking)
   map.addLayer({
     id: layerId,
     type: 'circle',
@@ -107,43 +115,12 @@ function createPulsingCircle(
     paint: {
       'circle-radius': size,
       'circle-color': color,
-      'circle-opacity': 0.8,
+      'circle-opacity': 0.85,
       'circle-stroke-width': 2,
-      'circle-stroke-color': '#ffffff',
+      'circle-stroke-color': 'rgba(255, 255, 255, 0.7)',
       'circle-stroke-opacity': 0.9
     }
   });
-  
-  // Add pulsing animation
-  animatePulse(map, layerId, size);
-}
-
-/**
- * Animate pulsing effect
- */
-function animatePulse(map: MapLibreMap, layerId: string, baseSize: number): void {
-  let size = baseSize;
-  let growing = true;
-  let animationId: number;
-  
-  const animate = () => {
-    if (growing) {
-      size += 0.5;
-      if (size >= baseSize + 5) growing = false;
-    } else {
-      size -= 0.5;
-      if (size <= baseSize) growing = true;
-    }
-    
-    if (map.getLayer(layerId)) {
-      map.setPaintProperty(layerId, 'circle-radius', size);
-      animationId = requestAnimationFrame(animate);
-    } else {
-      cancelAnimationFrame(animationId);
-    }
-  };
-  
-  requestAnimationFrame(animate);
 }
 
 /**
