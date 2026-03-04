@@ -31,15 +31,14 @@ const typeIcons: Record<string, typeof Wind> = {
   drought: AlertTriangle,
 };
 
-const severityColors: Record<string, string> = {
-  extreme: 'bg-red-500/20 text-red-400 border-red-500/30',
-  high: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  moderate: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  low: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+const severityStyles: Record<string, { dot: string; badge: string }> = {
+  extreme: { dot: 'bg-destructive', badge: 'bg-destructive/15 text-red-400 border-destructive/25' },
+  high: { dot: 'bg-amber-500', badge: 'bg-amber-500/15 text-amber-400 border-amber-500/25' },
+  moderate: { dot: 'bg-yellow-500', badge: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/25' },
+  low: { dot: 'bg-emerald-500', badge: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25' },
 };
 
 function buildTimelineData(threat: ThreatDetail, allThreats: ThreatDetail[]): { hour: number; intensity: number }[] {
-  // Find all detections at same location with same variable
   const variable = threat.source_artifact?.variable;
   const locKey = `${threat.lat}_${threat.lng}`;
 
@@ -57,7 +56,6 @@ function buildTimelineData(threat: ThreatDetail, allThreats: ThreatDetail[]): { 
     }));
   }
 
-  // Single point — show persistence range if available
   const range = threat.source_artifact?.forecast_range;
   if (range && Array.isArray(range)) {
     const points: { hour: number; intensity: number }[] = [];
@@ -89,27 +87,30 @@ const ThreatDetailsPanel = ({ threat, onClose, allThreats = [] }: ThreatDetailsP
   if (!threat) return null;
 
   const Icon = typeIcons[threat.type] || AlertTriangle;
-  const sevClass = severityColors[threat.severity] || severityColors.moderate;
+  const sev = severityStyles[threat.severity] || severityStyles.moderate;
   const timeline = buildTimelineData(threat, allThreats);
   const persistHours = threat.source_artifact?.persistence_hours;
   const fRange = threat.source_artifact?.forecast_range;
 
   return (
     <div
-      className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-50 w-[420px] max-w-[95vw] rounded-xl border border-border/60 bg-card/95 backdrop-blur-xl shadow-2xl transition-all duration-200 ${
+      className={`fixed bottom-12 left-1/2 -translate-x-1/2 z-50 w-[420px] max-w-[95vw] neu-panel-elevated overflow-hidden transition-all duration-200 ${
         visible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
       }`}
     >
+      {/* Severity glow line */}
+      <div className="neu-glow-line" />
+
       {/* Header */}
-      <div className="flex items-start justify-between p-4 border-b border-border/40">
+      <div className="flex items-start justify-between p-4 border-b border-border/30">
         <div className="flex items-start gap-3 min-w-0">
-          <div className={`p-2 rounded-lg border ${sevClass}`}>
+          <div className={`p-2 rounded-lg border ${sev.badge}`}>
             <Icon className="h-4 w-4" />
           </div>
           <div className="min-w-0">
             <h3 className="text-sm font-semibold text-foreground truncate">{threat.title}</h3>
             <div className="flex items-center gap-2 mt-1">
-              <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border ${sevClass}`}>
+              <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border ${sev.badge}`}>
                 {threat.severity}
               </span>
               <span className="text-[10px] text-muted-foreground capitalize">{threat.type}</span>
@@ -125,20 +126,20 @@ const ThreatDetailsPanel = ({ threat, onClose, allThreats = [] }: ThreatDetailsP
       </div>
 
       {/* Description */}
-      <div className="px-4 py-3 border-b border-border/40">
+      <div className="px-4 py-3 border-b border-border/30">
         <p className="text-xs text-foreground/80 leading-relaxed">{threat.description}</p>
       </div>
 
       {/* Metadata grid */}
-      <div className="grid grid-cols-3 gap-px bg-border/30">
-        <div className="bg-card p-3 text-center">
+      <div className="grid grid-cols-3 gap-px bg-border/20">
+        <div className="p-3 text-center" style={{ background: 'hsla(220, 18%, 10%, 0.5)' }}>
           <MapPin className="h-3 w-3 mx-auto text-muted-foreground mb-1" />
           <div className="text-[10px] text-muted-foreground">Location</div>
           <div className="text-xs font-semibold text-foreground">
             {threat.lat.toFixed(1)}°, {threat.lng.toFixed(1)}°
           </div>
         </div>
-        <div className="bg-card p-3 text-center">
+        <div className="p-3 text-center" style={{ background: 'hsla(220, 18%, 10%, 0.5)' }}>
           <Activity className="h-3 w-3 mx-auto text-muted-foreground mb-1" />
           <div className="text-[10px] text-muted-foreground">Intensity</div>
           <div className="text-xs font-semibold text-foreground">
@@ -148,7 +149,7 @@ const ThreatDetailsPanel = ({ threat, onClose, allThreats = [] }: ThreatDetailsP
              threat.source_artifact?.variable === 'precip_6h' ? ' mm' : ''}
           </div>
         </div>
-        <div className="bg-card p-3 text-center">
+        <div className="p-3 text-center" style={{ background: 'hsla(220, 18%, 10%, 0.5)' }}>
           <Clock className="h-3 w-3 mx-auto text-muted-foreground mb-1" />
           <div className="text-[10px] text-muted-foreground">Persistence</div>
           <div className="text-xs font-semibold text-foreground">
@@ -159,7 +160,7 @@ const ThreatDetailsPanel = ({ threat, onClose, allThreats = [] }: ThreatDetailsP
 
       {/* Timeline chart */}
       {timeline.length > 1 && (
-        <div className="p-4 border-t border-border/40">
+        <div className="p-4 border-t border-border/30">
           <div className="text-[10px] font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
             Forecast Timeline {fRange ? `(f+${fRange[0]}h – f+${fRange[1]}h)` : ''}
           </div>
@@ -205,11 +206,14 @@ const ThreatDetailsPanel = ({ threat, onClose, allThreats = [] }: ThreatDetailsP
       )}
 
       {/* Footer */}
-      <div className="px-4 py-2 border-t border-border/40 flex items-center justify-between">
-        <span className="text-[10px] text-muted-foreground">
-          Source: {threat.data_source_run_id || 'GFS'}
-        </span>
-        <span className="text-[10px] text-muted-foreground">
+      <div className="px-4 py-2 border-t border-border/30 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <div className="h-1.5 w-1.5 rounded-full bg-primary/60 animate-pulse" />
+          <span className="text-[9px] font-mono text-muted-foreground/50">
+            {threat.data_source_run_id || 'GFS'}
+          </span>
+        </div>
+        <span className="text-[10px] text-muted-foreground/60">
           {threat.updated_at ? new Date(threat.updated_at).toLocaleString() : new Date().toLocaleString()}
         </span>
       </div>

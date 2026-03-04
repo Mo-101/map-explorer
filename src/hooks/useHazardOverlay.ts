@@ -119,14 +119,66 @@ function tooltipHtml(props: any) {
 
   const geo = `(${fmtNum(lat, 4)}, ${fmtNum(lng, 4)})`;
 
+  const sevColor: Record<string, string> = {
+    extreme: "rgba(239,68,68,0.7)",
+    high: "rgba(245,158,11,0.7)",
+    moderate: "rgba(234,179,8,0.7)",
+    low: "rgba(16,185,129,0.7)",
+  };
+  const dotColor = sevColor[String(severity).toLowerCase()] || "rgba(14,165,233,0.7)";
+
   return `
-    <div style="min-width:240px;max-width:320px">
-      <div style="font-weight:700;font-size:13px;line-height:1.2">${title}</div>
-      <div style="opacity:.85;font-size:12px;margin-top:4px">${type} · Severity: ${severity}</div>
-      <div style="opacity:.85;font-size:12px;margin-top:4px">When: ${when}</div>
-      <div style="opacity:.85;font-size:12px;margin-top:4px">Geo: ${geo}</div>
-      ${summary.length ? `<div style="margin-top:8px;font-size:12px;line-height:1.35">${summary.map((x) => `- ${x}`).join("<br/>")}</div>` : ""}
-      ${props?.description ? `<div style="margin-top:8px;font-size:12px;opacity:.9">${String(props.description)}</div>` : ""}
+    <div style="
+      min-width:260px;max-width:340px;
+      background:linear-gradient(135deg, rgba(15,23,42,0.82) 0%, rgba(10,15,30,0.88) 100%);
+      backdrop-filter:blur(24px) saturate(1.4);
+      -webkit-backdrop-filter:blur(24px) saturate(1.4);
+      border:1px solid rgba(148,163,184,0.12);
+      border-radius:16px;
+      box-shadow:0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06);
+      padding:0;
+      font-family:'Inter',system-ui,-apple-system,sans-serif;
+      overflow:hidden;
+    ">
+      <!-- Accent glow line -->
+      <div style="height:1px;background:linear-gradient(90deg,transparent 5%,${dotColor} 50%,transparent 95%)"></div>
+
+      <div style="padding:14px 16px 12px">
+        <!-- Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+          <div style="font-weight:700;font-size:13px;line-height:1.3;color:rgba(226,232,240,0.95)">${title}</div>
+          <span style="font-size:8px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(148,163,184,0.5);font-weight:500">intel</span>
+        </div>
+
+        <!-- Type & Severity -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:rgba(203,213,225,0.85)">
+            <span style="width:6px;height:6px;border-radius:50%;background:${dotColor};display:inline-block"></span>
+            ${type}
+          </span>
+          <span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:2px 8px;border-radius:6px;background:${dotColor.replace('0.7','0.15')};color:rgba(226,232,240,0.9);border:1px solid ${dotColor.replace('0.7','0.25')}">${severity}</span>
+        </div>
+
+        <!-- Geo & Time -->
+        <div style="font-size:11px;color:rgba(148,163,184,0.7);line-height:1.5">
+          <div style="display:flex;gap:6px"><span style="color:rgba(148,163,184,0.5)">📍</span> ${geo}</div>
+          <div style="display:flex;gap:6px"><span style="color:rgba(148,163,184,0.5)">🕐</span> ${when}</div>
+        </div>
+
+        ${summary.length ? `
+        <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(148,163,184,0.1)">
+          ${summary.map(x => `<div style="font-size:11px;color:rgba(203,213,225,0.8);line-height:1.6;display:flex;gap:6px"><span style="color:rgba(148,163,184,0.4)">›</span> ${x}</div>`).join("")}
+        </div>` : ""}
+
+        ${props?.description ? `
+        <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(148,163,184,0.1);font-size:11px;color:rgba(203,213,225,0.7);line-height:1.5">${String(props.description)}</div>` : ""}
+
+        <!-- Footer -->
+        <div style="margin-top:10px;padding-top:6px;border-top:1px solid rgba(148,163,184,0.08);display:flex;align-items:center;gap:6px">
+          <span style="width:5px;height:5px;border-radius:50%;background:rgba(14,165,233,0.6);animation:pulse 2s infinite"></span>
+          <span style="font-size:9px;font-family:monospace;color:rgba(148,163,184,0.4)">MoScripts Intelligence</span>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -452,7 +504,7 @@ export function useHazardOverlay(map: maptilersdk.Map | null) {
     // Tooltip
     const PopupCtor = (maptilersdk as any).Popup;
     const popup = PopupCtor
-      ? new PopupCtor({ closeButton: false, closeOnClick: false, maxWidth: "340px" })
+      ? new PopupCtor({ closeButton: false, closeOnClick: false, maxWidth: "360px", className: "moscripts-popup" })
       : null;
 
     const onEnter = (e: any) => {

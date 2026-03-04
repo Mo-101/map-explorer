@@ -68,10 +68,10 @@ const WeatherControls = ({
           <MoScriptsTooltip key={opt.id} title={opt.label} description={opt.tip} position="right">
             <button
               onClick={() => onChangeLayer(opt.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium backdrop-blur-md border transition-all duration-200 shadow-lg ${
+              className={`px-3 py-1.5 text-xs font-medium transition-all duration-200 ${
                 activeLayer === opt.id
-                  ? "bg-primary/90 text-primary-foreground border-primary/50"
-                  : "bg-card/80 text-foreground/80 border-border/50 hover:bg-secondary hover:text-foreground"
+                  ? "neu-btn-active text-primary"
+                  : "neu-btn text-foreground/80 hover:text-foreground"
               }`}
             >
               {opt.label}
@@ -84,10 +84,10 @@ const WeatherControls = ({
             <button
               type="button"
               onClick={onToggleTerrain}
-              className={`mt-2 px-3 py-1.5 rounded-lg text-xs font-medium backdrop-blur-md border transition-all duration-200 shadow-lg ${
+              className={`mt-2 px-3 py-1.5 text-xs font-medium transition-all duration-200 ${
                 terrainEnabled
-                  ? "bg-primary/90 text-primary-foreground border-primary/50"
-                  : "bg-card/80 text-foreground/80 border-border/50 hover:bg-secondary hover:text-foreground"
+                  ? "neu-btn-active text-primary"
+                  : "neu-btn text-foreground/80 hover:text-foreground"
               }`}
             >
               Terrain
@@ -102,10 +102,10 @@ const WeatherControls = ({
               <button
                 type="button"
                 onClick={onToggleIMERG}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium backdrop-blur-md border transition-all duration-200 shadow-lg flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 text-xs font-medium transition-all duration-200 flex items-center gap-1.5 ${
                   imergEnabled
-                    ? "bg-primary/90 text-primary-foreground border-primary/50"
-                    : "bg-card/80 text-foreground/80 border-border/50 hover:bg-secondary hover:text-foreground"
+                    ? "neu-btn-active text-primary"
+                    : "neu-btn text-foreground/80 hover:text-foreground"
                 }`}
               >
                 <CloudRain size={12} />
@@ -120,8 +120,8 @@ const WeatherControls = ({
                     onClick={() => onChangeIMERGMode(m)}
                     className={`flex-1 px-2 py-1 rounded text-[10px] font-medium transition-all ${
                       imergMode === m
-                        ? 'bg-primary/80 text-primary-foreground'
-                        : 'bg-card/60 text-muted-foreground hover:text-foreground'
+                        ? 'neu-btn-active text-primary'
+                        : 'neu-inset text-muted-foreground hover:text-foreground'
                     }`}
                   >
                     {m}
@@ -136,28 +136,32 @@ const WeatherControls = ({
       {/* Bottom-center: time animation bar */}
       <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-10 w-[60vw] max-w-2xl">
         <MoScriptsTooltip title="Weather Timeline" description="Scrub through forecast time steps or press play for animated playback. Shows how weather conditions evolve over the forecast period." position="top">
-          <div className="flex flex-col items-center gap-2 px-5 py-4 rounded-xl bg-card/85 backdrop-blur-md border border-border/50 shadow-lg">
-            <div className="flex items-center gap-3 w-full">
-              <button
-                onClick={onTogglePlay}
-                className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary/90 text-primary-foreground hover:bg-primary transition-all"
-                aria-label={isPlaying ? "Pause" : "Play"}
-              >
-                {isPlaying ? <Pause size={16} /> : <Play size={16} />}
-              </button>
-              <input
-                type="range"
-                aria-label="Timeline"
-                min={sliderMin}
-                max={sliderMax}
-                value={sliderValue}
-                onChange={(e) => onSliderChange(Number(e.target.value))}
-                className="flex-1 h-1.5 appearance-none rounded-full bg-secondary cursor-pointer accent-primary"
-              />
+          <div className="neu-panel-elevated overflow-hidden">
+            <div className="neu-glow-line" />
+            <div className="flex flex-col items-center gap-2 px-5 py-4">
+              <div className="flex items-center gap-3 w-full">
+                <button
+                  onClick={onTogglePlay}
+                  className="flex items-center justify-center w-9 h-9 neu-btn-active text-primary hover:text-primary-foreground hover:bg-primary/30 transition-all"
+                  style={{ borderRadius: '10px' }}
+                  aria-label={isPlaying ? "Pause" : "Play"}
+                >
+                  {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+                </button>
+                <input
+                  type="range"
+                  aria-label="Timeline"
+                  min={sliderMin}
+                  max={sliderMax}
+                  value={sliderValue}
+                  onChange={(e) => onSliderChange(Number(e.target.value))}
+                  className="flex-1 h-1.5 appearance-none rounded-full bg-secondary cursor-pointer accent-primary"
+                />
+              </div>
+              <span className="text-[11px] font-semibold text-muted-foreground tracking-wide">
+                {timeText}
+              </span>
             </div>
-            <span className="text-[11px] font-semibold text-muted-foreground tracking-wide">
-              {timeText}
-            </span>
           </div>
         </MoScriptsTooltip>
       </div>

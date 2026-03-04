@@ -49,44 +49,52 @@ export default function BackendStatusBadge() {
         position="left"
       >
         <div
-          className={`px-3 py-2 rounded-xl backdrop-blur-md border shadow-lg text-xs font-mono cursor-pointer transition-all ${
-            ok
-              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-200"
-              : "bg-red-500/15 border-red-500/30 text-red-200"
-          }`}
+          className="neu-panel-elevated overflow-hidden cursor-pointer transition-all"
           onClick={() => setExpanded(v => !v)}
         >
-          <div className="flex items-center justify-between gap-3">
-            <span className="font-semibold">{label}</span>
-            {ok && data?.active_threats !== undefined && (
-              <span className="opacity-90">{data.active_threats} active</span>
-            )}
-            <span className="opacity-60">{data?.checked_at ? new Date(data.checked_at).toLocaleTimeString() : "..."}</span>
-          </div>
+          {/* Status glow line */}
+          <div
+            className="h-[1px] w-full"
+            style={{
+              background: ok
+                ? "linear-gradient(90deg, transparent 5%, hsla(142, 71%, 45%, 0.5) 50%, transparent 95%)"
+                : "linear-gradient(90deg, transparent 5%, hsla(0, 70%, 55%, 0.5) 50%, transparent 95%)"
+            }}
+          />
 
-          {!ok && data?.error && (
-            <div className="opacity-80 mt-1">{data.error}</div>
-          )}
-
-          {expanded && ok && data?.by_source && (
-            <div className="mt-2 pt-2 border-t border-emerald-500/20 space-y-1">
-              {Object.entries(data.by_source).map(([src, info]) => (
-                <div key={src} className="flex justify-between gap-4">
-                  <span className="text-emerald-300">{src}</span>
-                  <span className="opacity-70">
-                    {info.active_count} active · {new Date(info.last_updated).toLocaleTimeString()}
-                  </span>
-                </div>
-              ))}
-              {data.by_severity && (
-                <div className="mt-1 pt-1 border-t border-emerald-500/20 opacity-70">
-                  {Object.entries(data.by_severity).map(([sev, count]) => (
-                    <span key={sev} className="mr-2">{sev}: {count}</span>
-                  ))}
-                </div>
+          <div className="px-3 py-2 text-xs font-mono">
+            <div className="flex items-center justify-between gap-3">
+              <span className={`font-semibold ${ok ? "text-emerald-300" : "text-red-300"}`}>{label}</span>
+              {ok && data?.active_threats !== undefined && (
+                <span className="text-foreground/70">{data.active_threats} active</span>
               )}
+              <span className="text-muted-foreground/60">{data?.checked_at ? new Date(data.checked_at).toLocaleTimeString() : "..."}</span>
             </div>
-          )}
+
+            {!ok && data?.error && (
+              <div className="text-red-300/80 mt-1">{data.error}</div>
+            )}
+
+            {expanded && ok && data?.by_source && (
+              <div className="mt-2 pt-2 border-t border-border/30 space-y-1">
+                {Object.entries(data.by_source).map(([src, info]) => (
+                  <div key={src} className="flex justify-between gap-4">
+                    <span className="text-emerald-300/80">{src}</span>
+                    <span className="text-muted-foreground/60">
+                      {info.active_count} active · {new Date(info.last_updated).toLocaleTimeString()}
+                    </span>
+                  </div>
+                ))}
+                {data.by_severity && (
+                  <div className="mt-1 pt-1 border-t border-border/20 text-muted-foreground/50">
+                    {Object.entries(data.by_severity).map(([sev, count]) => (
+                      <span key={sev} className="mr-2">{sev}: {count}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </MoScriptsTooltip>
     </div>
