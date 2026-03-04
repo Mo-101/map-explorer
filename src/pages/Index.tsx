@@ -8,6 +8,7 @@ import BackendStatusBadge from "@/components/BackendStatusBadge";
 import SituationalTicker from "@/components/SituationalTicker";
 import ThreatDetailsPanel from "@/components/ThreatDetailsPanel";
 import IMERGRainfallLayer from "@/components/IMERGRainfallLayer";
+import CopernicusFloodLayer from "@/components/CopernicusFloodLayer";
 import ClusterPolygonLayer from "@/components/ClusterPolygonLayer";
 import ClusterStatsBadge from "@/components/ClusterStatsBadge";
 import GdacsRiskSummary from "@/components/GdacsRiskSummary";
@@ -54,6 +55,7 @@ const Index = () => {
   const [imergEnabled, setImergEnabled] = useState(false);
   const [imergMode, setImergMode] = useState<'24h' | '72h'>('24h');
   const [clusters, setClusters] = useState<any[]>([]);
+  const [copernicusFloodEnabled, setCopernicusFloodEnabled] = useState(false);
 
   const weather = useWeatherLayers(mapInstance);
 
@@ -149,9 +151,10 @@ const Index = () => {
 
       <ClusterStatsBadge clusterCount={clusters.length} rawThreatCount={allThreats.length} />
 
-      {mapInstance && (
+      {mapInstance && (<>
         <IMERGRainfallLayer map={mapInstance} visible={imergEnabled} mode={imergMode} />
-      )}
+        <CopernicusFloodLayer map={mapInstance} visible={copernicusFloodEnabled} />
+      </>)}
 
       {mapInstance && clusters.length > 0 && (
         <ClusterPolygonLayer
@@ -196,6 +199,8 @@ const Index = () => {
           onToggleIMERG={() => setImergEnabled(v => !v)}
           imergMode={imergMode}
           onChangeIMERGMode={setImergMode}
+          copernicusFloodEnabled={copernicusFloodEnabled}
+          onToggleCopernicusFlood={() => setCopernicusFloodEnabled(v => !v)}
         />
       )}
 
