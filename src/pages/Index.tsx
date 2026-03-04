@@ -10,6 +10,7 @@ import ThreatDetailsPanel from "@/components/ThreatDetailsPanel";
 import IMERGRainfallLayer from "@/components/IMERGRainfallLayer";
 import ClusterPolygonLayer from "@/components/ClusterPolygonLayer";
 import ClusterStatsBadge from "@/components/ClusterStatsBadge";
+import GdacsRiskSummary from "@/components/GdacsRiskSummary";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
 import { orchestrator, emit } from "@/moscripts";
 import { mo_THREAT_RENDERER } from "@/moscripts";
@@ -197,6 +198,8 @@ const Index = () => {
           onChangeIMERGMode={setImergMode}
         />
       )}
+
+      <GdacsRiskSummary />
 
       <ThreatDetailsPanel
         threat={selectedThreat}
