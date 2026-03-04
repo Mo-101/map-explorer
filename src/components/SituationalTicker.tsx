@@ -9,7 +9,7 @@ interface TickerItem {
   severity: 'info' | 'warning' | 'critical';
   lat?: number;
   lng?: number;
-  threatData?: any; // raw threat for details panel
+  threatData?: any;
 }
 
 // Expanded African city lookup matching the 35 monitoring points
@@ -153,7 +153,7 @@ function buildTickerItems(threats: any[]): TickerItem[] {
 }
 
 const severityDot: Record<string, string> = {
-  critical: 'bg-red-500',
+  critical: 'bg-destructive',
   warning: 'bg-amber-500',
   info: 'bg-emerald-500',
 };
@@ -264,7 +264,6 @@ const SituationalTicker = ({ mapInstance, onThreatSelect }: SituationalTickerPro
     if (item.lat != null && item.lng != null && mapInstance) {
       mapInstance.flyTo({ center: [item.lng, item.lat], zoom: 6, duration: 1500 });
     }
-    // Open details panel if threat data available
     if (item.threatData && onThreatSelect) {
       const t = item.threatData;
       onThreatSelect({
@@ -289,37 +288,66 @@ const SituationalTicker = ({ mapInstance, onThreatSelect }: SituationalTickerPro
   const displayItems = [...items, ...items];
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 h-9 bg-card/90 backdrop-blur-md border-t border-border/50 flex items-center overflow-hidden">
-      <div className="shrink-0 px-3 h-full flex items-center gap-1.5 border-r border-border/50 bg-card">
-        <span className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Live</span>
-        <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-        </span>
-      </div>
-      <div className="flex-1 overflow-hidden">
+    <div className="fixed bottom-0 left-0 right-0 z-50 overflow-hidden">
+      {/* Neumorphic ticker bar */}
+      <div
+        className="h-10 flex items-center"
+        style={{
+          background: 'linear-gradient(145deg, hsla(220, 18%, 10%, 0.88) 0%, hsla(220, 20%, 6%, 0.92) 100%)',
+          backdropFilter: 'blur(24px) saturate(1.3)',
+          WebkitBackdropFilter: 'blur(24px) saturate(1.3)',
+          borderTop: '1px solid hsla(220, 14%, 18%, 0.4)',
+          boxShadow: '0 -4px 20px hsla(220, 20%, 3%, 0.5), inset 0 1px 0 hsla(210, 20%, 95%, 0.04)',
+        }}
+      >
+        {/* LIVE badge */}
         <div
-          ref={tickerRef}
-          className="flex items-center gap-8 whitespace-nowrap animate-ticker"
+          className="shrink-0 px-4 h-full flex items-center gap-2"
+          style={{
+            borderRight: '1px solid hsla(220, 14%, 18%, 0.3)',
+            background: 'hsla(220, 18%, 8%, 0.6)',
+          }}
         >
-          {displayItems.map((item, i) => {
-            const clickable = (item.lat != null && item.lng != null) || item.threatData;
-            return (
-              <span
-                key={i}
-                className={`inline-flex items-center gap-2 text-xs ${clickable ? 'cursor-pointer hover:bg-accent/10 rounded px-1 transition-colors' : ''}`}
-                onClick={clickable ? () => handleItemClick(item) : undefined}
-              >
-                <span className={`h-1.5 w-1.5 rounded-full ${severityDot[item.severity]}`} />
-                <span className="font-semibold text-muted-foreground">{item.module}</span>
-                <span className="text-foreground/80">{item.text}</span>
-              </span>
-            );
-          })}
+          <span className="text-[10px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Live</span>
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+          </span>
         </div>
-      </div>
-      <div className="shrink-0 px-3 h-full flex items-center border-l border-border/50 bg-card">
-        <span className="text-[10px] text-muted-foreground">{new Date().toLocaleTimeString()}</span>
+
+        {/* Scrolling content */}
+        <div className="flex-1 overflow-hidden">
+          <div
+            ref={tickerRef}
+            className="flex items-center gap-8 whitespace-nowrap animate-ticker"
+          >
+            {displayItems.map((item, i) => {
+              const clickable = (item.lat != null && item.lng != null) || item.threatData;
+              return (
+                <span
+                  key={i}
+                  className={`inline-flex items-center gap-2 text-xs ${clickable ? 'cursor-pointer hover:text-foreground rounded px-1.5 py-0.5 transition-colors' : ''}`}
+                  onClick={clickable ? () => handleItemClick(item) : undefined}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${severityDot[item.severity]}`} />
+                  <span className="font-semibold text-muted-foreground">{item.module}</span>
+                  <span className="text-foreground/70">{item.text}</span>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Time badge */}
+        <div
+          className="shrink-0 px-4 h-full flex items-center"
+          style={{
+            borderLeft: '1px solid hsla(220, 14%, 18%, 0.3)',
+            background: 'hsla(220, 18%, 8%, 0.6)',
+          }}
+        >
+          <span className="text-[10px] font-mono text-muted-foreground/70">{new Date().toLocaleTimeString()}</span>
+        </div>
       </div>
     </div>
   );

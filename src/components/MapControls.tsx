@@ -18,7 +18,7 @@ const ControlButton = ({
   <button
     onClick={onClick}
     aria-label={label}
-    className="flex items-center justify-center w-10 h-10 rounded-lg bg-card/90 text-foreground hover:bg-secondary hover:text-primary transition-all duration-200 backdrop-blur-md border border-border/50 shadow-lg"
+    className="flex items-center justify-center w-10 h-10 neu-btn text-foreground hover:text-primary transition-all duration-200"
   >
     {children}
   </button>
@@ -34,11 +34,14 @@ const MapControls = ({ zoom, coordinates }: MapControlsProps) => {
           description="Real-time geospatial intelligence feed. Map data is refreshed every 30 seconds from multiple hazard sources."
           position="right"
         >
-          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-card/90 backdrop-blur-md border border-border/50 shadow-lg">
-            <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-            <span className="text-sm font-semibold tracking-wide text-foreground">
-              MapView
-            </span>
+          <div className="neu-panel-elevated overflow-hidden">
+            <div className="neu-glow-line" />
+            <div className="flex items-center gap-2.5 px-4 py-2.5">
+              <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+              <span className="text-sm font-semibold tracking-wide text-foreground">
+                MapView
+              </span>
+            </div>
           </div>
         </MoScriptsTooltip>
       </div>
@@ -75,7 +78,7 @@ const MapControls = ({ zoom, coordinates }: MapControlsProps) => {
           description={`Current center: ${coordinates.lat.toFixed(4)}°N, ${coordinates.lng.toFixed(4)}°E at zoom level ${zoom}. Coordinates update in real-time as you pan.`}
           position="top"
         >
-          <div className="flex items-center gap-4 px-4 py-2 rounded-xl bg-card/90 backdrop-blur-md border border-border/50 shadow-lg text-xs text-muted-foreground font-mono">
+          <div className="neu-panel px-4 py-2 text-xs text-muted-foreground font-mono flex items-center gap-4">
             <span>
               {coordinates.lat}° N, {coordinates.lng}° E
             </span>
