@@ -4,7 +4,7 @@ import { ChevronDown, ChevronUp, Eye } from "lucide-react";
 interface LegendEntry {
   color: string;
   label: string;
-  shape: "circle" | "line" | "fill" | "droplet";
+  shape: "circle" | "line" | "fill" | "droplet" | "spiral" | "diamond" | "biohazard";
   active?: boolean;
 }
 
@@ -17,50 +17,75 @@ interface MapLegendProps {
 }
 
 const THREAT_TYPES: LegendEntry[] = [
-  { color: "#ef4444", label: "Cyclone", shape: "circle" },
+  { color: "#ef4444", label: "Cyclone", shape: "spiral" },
   { color: "#3b82f6", label: "Flood", shape: "droplet" },
-  { color: "#f97316", label: "Storm", shape: "circle" },
-  { color: "#a855f7", label: "Earthquake", shape: "circle" },
-  { color: "#ec4899", label: "Outbreak", shape: "circle" },
-  { color: "#eab308", label: "Drought", shape: "circle" },
+  { color: "#f97316", label: "Landslide", shape: "diamond" },
+  { color: "#ec4899", label: "Outbreak", shape: "biohazard" },
+  { color: "#8b5cf6", label: "Convergence", shape: "circle" },
 ];
 
 const ShapeIcon = ({ shape, color }: { shape: string; color: string }) => {
   if (shape === "droplet") {
     return (
-      <div
-        className="w-3.5 h-3.5 rounded-full"
-        style={{
-          background: `radial-gradient(circle at 30% 30%, ${color}aa, ${color})`,
-          boxShadow: `0 0 6px ${color}66`,
-        }}
-      />
+      <svg width="14" height="18" viewBox="0 0 14 18">
+        <path
+          d="M7 1 C8.5 4.5 13 8 13 11.5 C13 14.8 10.3 17 7 17 C3.7 17 1 14.8 1 11.5 C1 8 5.5 4.5 7 1Z"
+          fill={color}
+          stroke="rgba(255,255,255,0.7)"
+          strokeWidth="1"
+        />
+      </svg>
+    );
+  }
+  if (shape === "spiral") {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" r="7" fill={color} stroke="rgba(255,255,255,0.6)" strokeWidth="1" />
+        <path
+          d="M8 8 C8 6.5 9.5 5.5 11 6.5 C12.5 7.5 12 10 10 11 C7.5 12.5 4.5 11 4 8 C3.5 4.5 6 2.5 8 3"
+          fill="none"
+          stroke="rgba(255,255,255,0.8)"
+          strokeWidth="1.2"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  if (shape === "diamond") {
+    return (
+      <svg width="14" height="18" viewBox="0 0 14 18">
+        <path
+          d="M7 1 L13 9 L7 17 L1 9 Z"
+          fill={color}
+          stroke="rgba(255,255,255,0.7)"
+          strokeWidth="1"
+        />
+      </svg>
+    );
+  }
+  if (shape === "biohazard") {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" r="7" fill={color} stroke="rgba(255,255,255,0.6)" strokeWidth="1" />
+        <circle cx="8" cy="8" r="3" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="1" />
+        <circle cx="8" cy="4.5" r="1.5" fill="rgba(255,255,255,0.25)" />
+        <circle cx="5" cy="10.5" r="1.5" fill="rgba(255,255,255,0.25)" />
+        <circle cx="11" cy="10.5" r="1.5" fill="rgba(255,255,255,0.25)" />
+      </svg>
     );
   }
   if (shape === "line") {
-    return (
-      <div className="w-4 h-0.5 rounded-full" style={{ background: color }} />
-    );
+    return <div className="w-4 h-0.5 rounded-full" style={{ background: color }} />;
   }
   if (shape === "fill") {
     return (
-      <div
-        className="w-3.5 h-3.5 rounded-sm border"
-        style={{
-          background: `${color}33`,
-          borderColor: `${color}88`,
-        }}
-      />
+      <div className="w-3.5 h-3.5 rounded-sm border" style={{ background: `${color}33`, borderColor: `${color}88` }} />
     );
   }
   return (
     <div
       className="w-3 h-3 rounded-full border-2"
-      style={{
-        background: `${color}dd`,
-        borderColor: "rgba(255,255,255,0.6)",
-        boxShadow: `0 0 6px ${color}44`,
-      }}
+      style={{ background: `${color}dd`, borderColor: "rgba(255,255,255,0.6)", boxShadow: `0 0 6px ${color}44` }}
     />
   );
 };
