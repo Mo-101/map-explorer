@@ -1,22 +1,19 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { neon } from "npm:@neondatabase/serverless@0.10.4";
+import countryVuln from "../_shared/country_vulnerability.json" assert { type: "json" };
+import { getCountryName, getSaffirSimpsonCategory } from "../_shared/geo_utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// JTWC RSS/ATCF data sources — we use the public tropical cyclone best-track
-// and active warnings page. Since direct JTWC parsing is fragile, we also
-// pull from the IBTrACS (International Best Track Archive) which includes JTWC data,
-// and from Open-Meteo's marine weather API for active tropical systems.
-
 // Saffir-Simpson + tropical thresholds in knots
 const THRESHOLDS = {
   tropical_depression_kt: 20,
   tropical_storm_kt: 34,
   hurricane_cat1_kt: 64,
-  hurricane_cat3_kt: 96, // major
+  hurricane_cat3_kt: 96,
   hurricane_cat5_kt: 137,
 };
 
@@ -29,7 +26,34 @@ function classifyStorm(windKt: number): { severity: string; category: string } {
   return { severity: "low", category: "INVEST" };
 }
 
-// Known active basins we monitor (Indian Ocean + Atlantic for Africa impact)
+/** Compute simplified GDACS cyclone impact score */
+function computeGdacsCycloneScore(windKt: number, lat: number, lon: number) {
+  const category = getSaffirSimpsonCategory(windKt);
+  const country = getCountryName(lat, lon);
+  const vuln = (countryVuln as Record<string, { inform_lcc: number }>)[country ?? ""]?.inform_lcc ?? 0.6;
+
+  // Simplified exposure: coastal = high if within 200km of known African coast
+  const isCoastal = (lon >= 30 && lon <= 55 && lat >= -30 && lat <= 15) || // East Africa coast
+                    (lon >= -20 && lon <= 15 && lat >= -10 && lat <= 20);    // West Africa coast
+  const exposureClass = isCoastal ? "high" : "medium";
+
+  let gdacsLevel = "green";
+  if (category >= 3 && exposureClass !== "low") gdacsLevel = "red";
+  else if (category >= 1 && exposureClass === "high") gdacsLevel = "red";
+  else if (category >= 1) gdacsLevel = "orange";
+  else if (windKt >= THRESHOLDS.tropical_storm_kt) gdacsLevel = "orange";
+
+  return {
+    level: gdacsLevel,
+    category,
+    saffir_simpson: category > 0 ? `CAT${category}` : windKt >= 34 ? "TS" : "TD",
+    wind_kt: windKt,
+    exposure_class: exposureClass,
+    vulnerability: vuln,
+    country,
+  };
+}
+
 const MONITORED_BASINS = ["IO", "SI", "SP", "AL", "WP"];
 
 serve(async (req) => {
@@ -50,7 +74,7 @@ serve(async (req) => {
     const now = new Date();
     const runId = `jtwc_${now.toISOString().slice(0, 13).replace(/[-T:]/g, "")}`;
 
-    // ── Stale alert cleanup (runs BEFORE skip check) ──
+    // ── Stale alert cleanup ──
     await sql`
       UPDATE hazard_alerts SET is_active = false, updated_at = NOW()
       WHERE source = 'jtwc' AND is_active = true
@@ -69,7 +93,7 @@ serve(async (req) => {
     `;
     if (existing[0]?.count > 0) {
       return new Response(
-        JSON.stringify({ status: "completed_cleanup", reason: "run already ingested, stale alerts cleaned", run_id: runId }),
+        JSON.stringify({ status: "completed_cleanup", reason: "run already ingested", run_id: runId }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -84,18 +108,8 @@ serve(async (req) => {
 
     const allHazards: any[] = [];
 
-    // ── Strategy: Use Open-Meteo Marine API + NOAA's active hurricanes endpoint ──
-    // JTWC's website is often blocked/difficult to scrape. Instead, we pull from:
-    // 1. NOAA's active tropical cyclones GeoJSON (covers Atlantic + Eastern Pacific)
-    // 2. Open-Meteo marine weather for Indian Ocean monitoring points
-
-    // Source 1: NOAA Active Hurricanes (GeoJSON)
+    // Source 1: NHC RSS for active systems
     try {
-      const noaaUrl = "https://www.nhc.noaa.gov/CurrentSurges.json";
-      // Alternative: Active storm cone/track data
-      const activeUrl = "https://www.nhc.noaa.gov/gis/forecast/archive/active_storms.json";
-
-      // Try the NHC RSS for active systems
       const rssUrl = "https://www.nhc.noaa.gov/index-at.xml";
       const rssResp = await fetch(rssUrl, {
         headers: { "User-Agent": "MoStar-HazardMonitor/1.0" },
@@ -103,16 +117,12 @@ serve(async (req) => {
 
       if (rssResp.ok) {
         const rssText = await rssResp.text();
-
-        // Parse basic storm info from RSS XML
-        // Look for <item> blocks with storm data
         const itemRegex = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<description>(.*?)<\/description>[\s\S]*?<\/item>/g;
         let match;
         while ((match = itemRegex.exec(rssText)) !== null) {
           const title = match[1];
           const desc = match[2];
 
-          // Extract coordinates from description if present
           const latMatch = desc.match(/(\d+\.?\d*)\s*([NS])/i);
           const lonMatch = desc.match(/(\d+\.?\d*)\s*([EW])/i);
           const windMatch = desc.match(/(\d+)\s*(?:kt|knots|mph)/i);
@@ -123,14 +133,15 @@ serve(async (req) => {
             const windKt = windMatch ? parseInt(windMatch[1]) : 35;
 
             const classification = classifyStorm(windKt);
+            const gdacs = computeGdacsCycloneScore(windKt, lat, lon);
 
             allHazards.push({
               external_id: `${runId}_nhc_${title.slice(0, 30).replace(/\s+/g, "_")}`,
               source: "jtwc",
               type: "cyclone",
-              severity: classification.severity,
+              severity: gdacs.level === "red" ? "extreme" : classification.severity,
               title: `${classification.category}: ${title.slice(0, 60)}`,
-              description: `NHC Advisory: ${desc.slice(0, 200).replace(/<[^>]*>/g, "")}`,
+              description: `NHC Advisory: ${desc.slice(0, 200).replace(/<[^>]*>/g, "")} | GDACS: ${gdacs.level}`,
               lat,
               lng: lon,
               intensity: windKt,
@@ -142,6 +153,7 @@ serve(async (req) => {
                 wind_kt: windKt,
                 category: classification.category,
                 raw_description: desc.slice(0, 500),
+                gdacs,
               },
             });
           }
@@ -154,8 +166,7 @@ serve(async (req) => {
       console.log("NHC fetch error:", nhcErr);
     }
 
-    // Source 2: Monitor Indian Ocean / SW Indian Ocean for cyclone activity
-    // Use Open-Meteo marine/weather for key tropical cyclone genesis points
+    // Source 2: Indian Ocean monitor points
     const ioMonitorPoints = [
       { lat: -12.0, lon: 55.0, name: "SW Indian Ocean" },
       { lat: -15.0, lon: 65.0, name: "Central Indian Ocean" },
@@ -179,20 +190,20 @@ serve(async (req) => {
         const hourly = data?.hourly;
         if (!hourly?.wind_speed_10m) continue;
 
-        // Check for tropical-storm-force winds
         const maxWind = Math.max(...hourly.wind_speed_10m.filter((v: number | null) => v !== null));
         const minPressure = Math.min(...(hourly.surface_pressure?.filter((v: number | null) => v !== null) ?? [1013]));
 
         if (maxWind >= THRESHOLDS.tropical_storm_kt) {
           const classification = classifyStorm(maxWind);
+          const gdacs = computeGdacsCycloneScore(maxWind, pt.lat, pt.lon);
 
           allHazards.push({
             external_id: `${runId}_io_${pt.lat}_${pt.lon}`,
             source: "jtwc",
             type: "cyclone",
-            severity: classification.severity,
+            severity: gdacs.level === "red" ? "extreme" : classification.severity,
             title: `${classification.category} activity — ${pt.name}`,
-            description: `Tropical cyclone signal detected: ${maxWind.toFixed(0)} kt winds, ${minPressure.toFixed(0)} hPa at ${pt.name}`,
+            description: `Tropical cyclone signal: ${maxWind.toFixed(0)} kt winds, ${minPressure.toFixed(0)} hPa at ${pt.name} | GDACS: ${gdacs.level}`,
             lat: pt.lat,
             lng: pt.lon,
             intensity: maxWind,
@@ -205,6 +216,7 @@ serve(async (req) => {
               min_pressure_hpa: minPressure,
               category: classification.category,
               thresholds: THRESHOLDS,
+              gdacs,
             },
           });
         }

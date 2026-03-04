@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { neon } from "npm:@neondatabase/serverless@0.10.4";
+import countryVuln from "../_shared/country_vulnerability.json" assert { type: "json" };
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,6 +21,57 @@ const SEVERITY_MAP: Record<string, string> = {
 
 function isInAfrica(lat: number, lon: number): boolean {
   return lat >= AFRICA.lat_min && lat <= AFRICA.lat_max && lon >= AFRICA.lon_min && lon <= AFRICA.lon_max;
+}
+
+/** Compute simplified GDACS-style impact metrics from native GDACS fields */
+function enrichGdacsMetadata(props: any, eventType: string, alertLevel: string) {
+  const gdacs: Record<string, any> = {
+    level: alertLevel === "Red" ? "red" : alertLevel === "Orange" ? "orange" : "green",
+    alertscore: props.alertscore ?? null,
+    population_affected: props.population?.value ?? props.populationcount ?? null,
+    severity_unit: props.severitydata?.severityunit ?? null,
+    severity_value: props.severitydata?.severity ?? null,
+  };
+
+  // EQ-specific: compute raw impact score
+  if (eventType === "earthquake" && props.severitydata?.severity) {
+    const mag = Number(props.severitydata.severity) || 0;
+    const depth = Number(props.severitydata.severityunit === "km" ? props.severitydata.severity : 10);
+    gdacs.magnitude = mag;
+    gdacs.raw_score = -7.75 + 0.82 * mag - 0.53 * Math.log10(Math.max(depth, 1));
+  }
+
+  // TC-specific: wind category
+  if (eventType === "cyclone") {
+    const windKph = Number(props.severitydata?.severity) || 0;
+    const windKt = windKph * 0.5399; // kph to knots
+    gdacs.wind_kph = windKph;
+    gdacs.wind_kt = +windKt.toFixed(0);
+    if (windKt >= 137) gdacs.category = "CAT5";
+    else if (windKt >= 113) gdacs.category = "CAT4";
+    else if (windKt >= 96) gdacs.category = "CAT3";
+    else if (windKt >= 83) gdacs.category = "CAT2";
+    else if (windKt >= 64) gdacs.category = "CAT1";
+    else if (windKt >= 34) gdacs.category = "TS";
+    else gdacs.category = "TD";
+  }
+
+  // DR-specific
+  if (eventType === "drought") {
+    gdacs.drought_score = props.alertscore ?? null;
+  }
+
+  // Country vulnerability lookup
+  const country = props.country || props.countryname;
+  if (country) {
+    const vuln = (countryVuln as Record<string, { inform_lcc: number }>)[country]?.inform_lcc;
+    if (vuln !== undefined) {
+      gdacs.inform_vulnerability = vuln;
+      gdacs.country = country;
+    }
+  }
+
+  return gdacs;
 }
 
 serve(async (req) => {
@@ -88,6 +140,17 @@ serve(async (req) => {
       const title = props.name || props.htmldescription || `GDACS ${eventType}`;
       const description = props.description || props.htmldescription || title;
 
+      // ── Enriched GDACS metadata ──
+      const gdacs = enrichGdacsMetadata(props, eventType, props.alertlevel);
+
+      const metadata = {
+        alertscore: props.alertscore,
+        country: props.country,
+        fromdate: props.fromdate,
+        todate: props.todate,
+        gdacs,
+      };
+
       await sql`
         INSERT INTO hazard_alerts (
           source, external_id, type, severity, title, description,
@@ -96,7 +159,7 @@ serve(async (req) => {
         ) VALUES (
           ${SOURCE}, ${externalId}, ${eventType}, ${severity}, ${title.slice(0, 500)},
           ${description.slice(0, 2000)}, ${lat}, ${lon}, true, ${runId}, NOW(),
-          ${JSON.stringify({ alertscore: props.alertscore, country: props.country, fromdate: props.fromdate, todate: props.todate })}::jsonb,
+          ${JSON.stringify(metadata)}::jsonb,
           NOW(), NOW()
         )
         ON CONFLICT (source, external_id) DO UPDATE SET
