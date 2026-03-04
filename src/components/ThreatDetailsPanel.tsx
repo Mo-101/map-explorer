@@ -16,6 +16,7 @@ interface ThreatDetail {
   data_source_run_id?: string;
   updated_at?: string;
   event_at?: string;
+  metadata?: Record<string, any>;
 }
 
 interface ThreatDetailsPanelProps {
@@ -158,7 +159,51 @@ const ThreatDetailsPanel = ({ threat, onClose, allThreats = [] }: ThreatDetailsP
         </div>
       </div>
 
-      {/* Timeline chart */}
+      {/* GDACS Impact Model section */}
+      {(() => {
+        const gdacs = threat.metadata?.gdacs || threat.source_artifact?.gdacs;
+        if (!gdacs) return null;
+        const levelColor = gdacs.level === 'red' ? 'bg-destructive/15 text-red-400 border-destructive/25' :
+          gdacs.level === 'orange' ? 'bg-amber-500/15 text-amber-400 border-amber-500/25' :
+          'bg-emerald-500/15 text-emerald-400 border-emerald-500/25';
+        return (
+          <div className="px-4 py-3 border-b border-border/30">
+            <div className="text-[10px] font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
+              GDACS Impact Model
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border ${levelColor}`}>
+                {gdacs.level}
+              </span>
+              {gdacs.score != null && (
+                <span className="text-[10px] text-foreground/70 px-1.5 py-0.5 rounded border border-border/30 bg-secondary/30">
+                  Score: {Number(gdacs.score).toFixed(2)}
+                </span>
+              )}
+              {gdacs.category && (
+                <span className="text-[10px] text-foreground/70 px-1.5 py-0.5 rounded border border-border/30 bg-secondary/30">
+                  {gdacs.category}
+                </span>
+              )}
+              {gdacs.vulnerability != null && (
+                <span className="text-[10px] text-foreground/70 px-1.5 py-0.5 rounded border border-border/30 bg-secondary/30">
+                  Vuln: {(gdacs.vulnerability * 100).toFixed(0)}%
+                </span>
+              )}
+              {gdacs.country && (
+                <span className="text-[10px] text-foreground/70 px-1.5 py-0.5 rounded border border-border/30 bg-secondary/30">
+                  {gdacs.country}
+                </span>
+              )}
+              {gdacs.population_affected && (
+                <span className="text-[10px] text-foreground/70 px-1.5 py-0.5 rounded border border-border/30 bg-secondary/30">
+                  Pop: {Number(gdacs.population_affected).toLocaleString()}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })()}
       {timeline.length > 1 && (
         <div className="p-4 border-t border-border/30">
           <div className="text-[10px] font-semibold text-muted-foreground mb-2 uppercase tracking-wider">

@@ -1,5 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { neon } from "npm:@neondatabase/serverless@0.10.4";
+import countryVuln from "../_shared/country_vulnerability.json" assert { type: "json" };
+import { getCountryName } from "../_shared/geo_utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,7 +10,6 @@ const corsHeaders = {
 
 const SOURCE = "usgs";
 
-// Africa bounding box: lat -35 to 37, lon -20 to 52
 const AFRICA_BOUNDS = { minLat: -35, maxLat: 37, minLon: -20, maxLon: 52 };
 
 function isInAfrica(lat: number, lon: number): boolean {
@@ -21,6 +22,21 @@ function mapMagnitudeToSeverity(mag: number): string {
   if (mag >= 6) return "high";
   if (mag >= 5) return "moderate";
   return "low";
+}
+
+/** Simplified GDACS EQ impact score (without population term).
+ *  Formula: rawScore = -7.75 + 0.82*mag - 0.53*log10(depth)
+ *  Then adjusted by INFORM Lack of Coping Capacity vulnerability. */
+function computeGdacsEqScore(mag: number, depthKm: number, country: string | null) {
+  const vuln = (countryVuln as Record<string, { inform_lcc: number }>)[country ?? ""]?.inform_lcc ?? 0.6;
+  const rawScore = -7.75 + 0.82 * mag - 0.53 * Math.log10(Math.max(depthKm, 1));
+  const gdacsScore = rawScore * vuln;
+
+  let gdacsLevel = "green";
+  if (gdacsScore >= 2) gdacsLevel = "red";
+  else if (gdacsScore >= 1) gdacsLevel = "orange";
+
+  return { score: +gdacsScore.toFixed(3), level: gdacsLevel, raw_score: +rawScore.toFixed(3), vulnerability: vuln, country };
 }
 
 serve(async (req) => {
@@ -83,7 +99,6 @@ serve(async (req) => {
       const lat = coords[1];
       const depth = coords[2] || 0;
 
-      // Filter to Africa
       if (!isInAfrica(lat, lon)) {
         skippedNonAfrica++;
         continue;
@@ -95,27 +110,37 @@ serve(async (req) => {
       const severity = mapMagnitudeToSeverity(mag);
       const eventTime = props.time ? new Date(props.time).toISOString() : new Date().toISOString();
 
+      // ── GDACS impact score ──
+      const country = getCountryName(lat, lon);
+      const gdacs = computeGdacsEqScore(mag, depth, country);
+
+      // Override severity if GDACS says it's worse
+      const effectiveSeverity = gdacs.level === "red" && severity !== "extreme" ? "high" : severity;
+
+      const metadata = {
+        magnitude: mag,
+        depth_km: depth,
+        place: props.place,
+        event_time: eventTime,
+        tsunami: props.tsunami,
+        felt: props.felt,
+        cdi: props.cdi,
+        mmi: props.mmi,
+        alert: props.alert,
+        url: props.url,
+        gdacs: gdacs,
+      };
+
       await sql`
         INSERT INTO hazard_alerts (
           source, external_id, type, severity, title, description,
           lat, lng, is_active, data_source_run_id, last_seen_at,
           metadata, created_at, updated_at
         ) VALUES (
-          ${SOURCE}, ${externalId}, 'earthquake', ${severity}, ${title.slice(0, 500)},
-          ${`M${mag} earthquake - ${props.place || 'Unknown location'} (depth: ${depth}km)`},
+          ${SOURCE}, ${externalId}, 'earthquake', ${effectiveSeverity}, ${title.slice(0, 500)},
+          ${`M${mag} earthquake - ${props.place || 'Unknown location'} (depth: ${depth}km) | GDACS: ${gdacs.level} (${gdacs.score})`},
           ${lat}, ${lon}, true, ${runId}, NOW(),
-          ${JSON.stringify({
-            magnitude: mag,
-            depth_km: depth,
-            place: props.place,
-            event_time: eventTime,
-            tsunami: props.tsunami,
-            felt: props.felt,
-            cdi: props.cdi,
-            mmi: props.mmi,
-            alert: props.alert,
-            url: props.url,
-          })}::jsonb,
+          ${JSON.stringify(metadata)}::jsonb,
           NOW(), NOW()
         )
         ON CONFLICT (source, external_id) DO UPDATE SET

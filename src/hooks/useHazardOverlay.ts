@@ -109,6 +109,41 @@ function tooltipHtml(props: any) {
   const lat = props?.lat;
   const lng = props?.lng;
 
+  // Parse GDACS metadata if available
+  let gdacsHtml = "";
+  try {
+    const meta = typeof props?.metadata === "string" ? JSON.parse(props.metadata) : props?.metadata;
+    const gdacs = meta?.gdacs || props?.gdacs;
+    if (gdacs) {
+      const levelColors: Record<string, string> = {
+        red: "rgba(239,68,68,0.8)",
+        orange: "rgba(251,146,60,0.8)",
+        green: "rgba(34,197,94,0.8)",
+      };
+      const levelColor = levelColors[gdacs.level] || "rgba(148,163,184,0.5)";
+      const parts: string[] = [];
+      if (gdacs.level) parts.push(`<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:6px;background:${levelColor.replace('0.8','0.15')};border:1px solid ${levelColor.replace('0.8','0.3')};font-size:10px;font-weight:700;text-transform:uppercase;color:rgba(226,232,240,0.95)">${gdacs.level}</span>`);
+      if (gdacs.score != null) parts.push(`Score: ${Number(gdacs.score).toFixed(2)}`);
+      if (gdacs.category) parts.push(`${gdacs.category}`);
+      if (gdacs.vulnerability != null) parts.push(`Vuln: ${(gdacs.vulnerability * 100).toFixed(0)}%`);
+      if (gdacs.country) parts.push(gdacs.country);
+      if (gdacs.magnitude) parts.push(`M${gdacs.magnitude}`);
+      if (gdacs.wind_kt) parts.push(`${gdacs.wind_kt} kt`);
+      if (gdacs.population_affected) parts.push(`Pop: ${Number(gdacs.population_affected).toLocaleString()}`);
+
+      gdacsHtml = `
+        <div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:rgba(15,23,42,0.5);border:1px solid rgba(148,163,184,0.1)">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:rgba(148,163,184,0.6)">GDACS Impact Model</span>
+            ${parts[0] || ""}
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:10px;color:rgba(203,213,225,0.8)">
+            ${parts.slice(1).map(p => `<span style="display:flex;gap:3px"><span style="color:rgba(148,163,184,0.4)">›</span>${p}</span>`).join("")}
+          </div>
+        </div>`;
+    }
+  } catch { /* ignore parse errors */ }
+
   const summary: string[] = [];
   if (Number.isFinite(conf)) summary.push(`Confidence: ${(Number(conf) * 100).toFixed(0)}%`);
   if (Number.isFinite(leadH)) summary.push(`Lead time: ${Math.round(Number(leadH))}h`);
@@ -129,7 +164,7 @@ function tooltipHtml(props: any) {
 
   return `
     <div style="
-      min-width:260px;max-width:340px;
+      min-width:280px;max-width:380px;
       background:linear-gradient(135deg, rgba(15,23,42,0.82) 0%, rgba(10,15,30,0.88) 100%);
       backdrop-filter:blur(24px) saturate(1.4);
       -webkit-backdrop-filter:blur(24px) saturate(1.4);
@@ -141,7 +176,7 @@ function tooltipHtml(props: any) {
       overflow:hidden;
     ">
       <!-- Accent glow line -->
-      <div style="height:1px;background:linear-gradient(90deg,transparent 5%,${dotColor} 50%,transparent 95%)"></div>
+      <div style="height:2px;background:linear-gradient(90deg,transparent 5%,${dotColor} 50%,transparent 95%)"></div>
 
       <div style="padding:14px 16px 12px">
         <!-- Header -->
@@ -170,13 +205,15 @@ function tooltipHtml(props: any) {
           ${summary.map(x => `<div style="font-size:11px;color:rgba(203,213,225,0.8);line-height:1.6;display:flex;gap:6px"><span style="color:rgba(148,163,184,0.4)">›</span> ${x}</div>`).join("")}
         </div>` : ""}
 
+        ${gdacsHtml}
+
         ${props?.description ? `
-        <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(148,163,184,0.1);font-size:11px;color:rgba(203,213,225,0.7);line-height:1.5">${String(props.description)}</div>` : ""}
+        <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(148,163,184,0.1);font-size:11px;color:rgba(203,213,225,0.7);line-height:1.5">${String(props.description).slice(0, 300)}</div>` : ""}
 
         <!-- Footer -->
         <div style="margin-top:10px;padding-top:6px;border-top:1px solid rgba(148,163,184,0.08);display:flex;align-items:center;gap:6px">
           <span style="width:5px;height:5px;border-radius:50%;background:rgba(14,165,233,0.6);animation:pulse 2s infinite"></span>
-          <span style="font-size:9px;font-family:monospace;color:rgba(148,163,184,0.4)">MoScripts Intelligence</span>
+          <span style="font-size:9px;font-family:monospace;color:rgba(148,163,184,0.4)">MoScripts Intelligence · GDACS Model</span>
         </div>
       </div>
     </div>
