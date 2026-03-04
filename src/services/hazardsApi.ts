@@ -54,3 +54,7 @@ export async function triggerUSGSIngestion() {
 export async function triggerWHODONIngestion() {
   return await callEdgeFunction("ingest-who-don", { method: "POST" });
 }
+
+export async function triggerFIRMSIngestion() {
+  return await callEdgeFunction("ingest-firms", { method: "POST" });
+}
