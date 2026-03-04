@@ -165,15 +165,30 @@
 }
 
 /* Remove default popup styling for glassmorphic popups */
+.threat-detection-popup .maplibregl-popup-content,
 .moscripts-popup .maplibregl-popup-content {
   background: transparent !important;
   box-shadow: none !important;
   padding: 0 !important;
-  border-radius: 0 !important;
+  border-radius: 12px !important;
+  overflow: hidden;
 }
 
+.threat-detection-popup .maplibregl-popup-tip,
 .moscripts-popup .maplibregl-popup-tip {
   display: none !important;
+}
+
+.threat-detection-popup .maplibregl-popup-close-button {
+  color: #94a3b8;
+  font-size: 18px;
+  right: 8px;
+  top: 8px;
+  z-index: 10;
+}
+.threat-detection-popup .maplibregl-popup-close-button:hover {
+  color: #e2e8f0;
+  background: transparent;
 }
 
 @keyframes tooltipIn {

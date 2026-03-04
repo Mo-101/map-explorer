@@ -94,20 +94,36 @@ function createPulsingCircle(
     }
   });
   
-  // Outer glow ring (static, no animation)
+  // Outer pulse ring — animated via smooth opacity transition
+  const pulseLayerId = `threat-pulse-${threat.id}`;
+  map.addLayer({
+    id: pulseLayerId,
+    type: 'circle',
+    source: sourceId,
+    paint: {
+      'circle-radius': size + 12,
+      'circle-color': color,
+      'circle-opacity': 0.08,
+      'circle-stroke-width': 1.5,
+      'circle-stroke-color': color,
+      'circle-stroke-opacity': 0.25,
+    }
+  });
+
+  // Mid glow ring
   map.addLayer({
     id: glowLayerId,
     type: 'circle',
     source: sourceId,
     paint: {
-      'circle-radius': size + 6,
+      'circle-radius': size + 5,
       'circle-color': color,
-      'circle-opacity': 0.15,
+      'circle-opacity': 0.18,
       'circle-stroke-width': 0,
     }
   });
   
-  // Main circle layer (static - no blinking)
+  // Main circle layer
   map.addLayer({
     id: layerId,
     type: 'circle',
@@ -115,10 +131,36 @@ function createPulsingCircle(
     paint: {
       'circle-radius': size,
       'circle-color': color,
-      'circle-opacity': 0.85,
+      'circle-opacity': 0.9,
       'circle-stroke-width': 2,
-      'circle-stroke-color': 'rgba(255, 255, 255, 0.7)',
-      'circle-stroke-opacity': 0.9
+      'circle-stroke-color': 'rgba(255, 255, 255, 0.8)',
+      'circle-stroke-opacity': 1
+    }
+  });
+
+  // Smooth pulsating animation using requestAnimationFrame
+  let phase = Math.random() * Math.PI * 2; // offset so markers don't sync
+  const speed = 0.025;
+  let animId: number;
+  const animate = () => {
+    phase += speed;
+    const pulse = 0.5 + 0.5 * Math.sin(phase);
+    try {
+      if (map.getLayer(pulseLayerId)) {
+        map.setPaintProperty(pulseLayerId, 'circle-radius', size + 8 + pulse * 10);
+        map.setPaintProperty(pulseLayerId, 'circle-stroke-opacity', 0.12 + pulse * 0.2);
+        map.setPaintProperty(pulseLayerId, 'circle-opacity', 0.04 + pulse * 0.08);
+      }
+    } catch { /* layer removed */ return; }
+    animId = requestAnimationFrame(animate);
+  };
+  animId = requestAnimationFrame(animate);
+
+  // Cleanup when source is removed
+  map.on('sourcedata', function onSourceData(e: any) {
+    if (!map.getSource(sourceId)) {
+      cancelAnimationFrame(animId);
+      map.off('sourcedata', onSourceData);
     }
   });
 }
@@ -193,103 +235,113 @@ function addThreatPopup(map: MapLibreMap, threat: ThreatData): void {
     const detectionModel = threat.detection_details?.model || 'GraphCast ML';
     const confidence = ((threat.confidence || 0) * 100).toFixed(0);
     
+    const threatColor = getThreatColor(threat.threat_type);
     const popupContent = `
-      <div style="padding: 12px; font-family: system-ui, -apple-system, sans-serif; max-width: 350px;">
-        <div style="display: flex; align-items: center; margin-bottom: 12px;">
+      <div style="
+        padding: 0; 
+        font-family: system-ui, -apple-system, sans-serif; 
+        max-width: 340px; 
+        background: rgba(15, 20, 30, 0.92); 
+        backdrop-filter: blur(16px) saturate(1.4);
+        -webkit-backdrop-filter: blur(16px) saturate(1.4);
+        border-radius: 12px; 
+        border: 1px solid rgba(255,255,255,0.08);
+        color: #e2e8f0;
+        overflow: hidden;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
+      ">
+        <!-- Header bar -->
+        <div style="
+          padding: 12px 14px; 
+          display: flex; align-items: center; gap: 10px; 
+          border-bottom: 1px solid rgba(255,255,255,0.06);
+          background: linear-gradient(135deg, ${threatColor}22, transparent);
+        ">
           <div style="
-            width: 12px; 
-            height: 12px; 
-            border-radius: 50%; 
-            background: ${getThreatColor(threat.threat_type)}; 
-            margin-right: 8px;
-          "></div>
-          <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: #1f2937;">
-            ${getThreatEmoji(threat.threat_type)} ${threat.threat_type.toUpperCase()}
-          </h3>
-        </div>
-        
-        <!-- Detection Source Info -->
-        <div style="background: #f0f9ff; padding: 8px; border-radius: 6px; margin-bottom: 12px; border-left: 3px solid #0ea5e9;">
-          <div style="font-weight: 600; color: #075985; margin-bottom: 4px;">🔍 DETECTION SOURCE</div>
-          <div style="color: #0c4a6e; font-size: 13px; line-height: 1.4;">
-            <div><strong>System:</strong> ${detectionSource}</div>
-            <div><strong>Model:</strong> ${detectionModel}</div>
-            <div><strong>Confidence:</strong> ${confidence}%</div>
-            <div><strong>Method:</strong> ${threat.detection_details?.detection_method || 'Anomaly Detection'}</div>
-          </div>
-        </div>
-        
-        <div style="background: #f8fafc; padding: 8px; border-radius: 6px; margin-bottom: 12px; border-left: 3px solid ${getThreatColor(threat.threat_type)};">
-          <div style="font-weight: 600; color: #374151; margin-bottom: 4px;">📍 Detection Location</div>
-          <div style="color: #6b7280; font-size: 14px;">
-            <strong>Coordinates:</strong> ${threat.center_lat?.toFixed(4) || threat.latitude?.toFixed(4) || 'N/A'}°, 
-            ${threat.center_lng?.toFixed(4) || threat.longitude?.toFixed(4) || 'N/A'}°
-          </div>
-          ${threat.affected_regions?.length ? `
-            <div style="margin-top: 4px; color: #6b7280;">
-              <strong>Regions:</strong> ${threat.affected_regions.join(', ')}
+            width: 32px; height: 32px; border-radius: 8px; 
+            background: ${threatColor}25; border: 1px solid ${threatColor}40;
+            display: flex; align-items: center; justify-content: center; font-size: 16px;
+          ">${getThreatEmoji(threat.threat_type)}</div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-size: 13px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: #f1f5f9;">
+              ${threat.threat_type}
             </div>
-          ` : ''}
+            <div style="font-size: 10px; color: #94a3b8; margin-top: 1px;">
+              ${detectionSource} · ${confidence}% confidence
+            </div>
+          </div>
         </div>
         
-        <div style="background: #fef3c7; padding: 8px; border-radius: 6px; margin-bottom: 12px;">
-          <div style="font-weight: 600; color: #92400e; margin-bottom: 4px;">⚠️ Estimated Impact</div>
-          <div style="color: #78350f; font-size: 13px; line-height: 1.4;">
+        <!-- Body -->
+        <div style="padding: 10px 14px; display: flex; flex-direction: column; gap: 8px;">
+          <!-- Location -->
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b;">📍 Location</span>
+            <span style="font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;">
+              ${(threat.center_lat ?? threat.latitude ?? 0).toFixed(2)}°, ${(threat.center_lng ?? threat.longitude ?? 0).toFixed(2)}°
+            </span>
+          </div>
+          
+          ${threat.affected_regions?.length ? `
+          <div style="font-size: 11px; color: #94a3b8;">
+            Regions: ${threat.affected_regions.join(', ')}
+          </div>
+          ` : ''}
+          
+          <!-- Impact summary -->
+          <div style="
+            padding: 8px 10px; border-radius: 8px; 
+            background: rgba(255,255,255,0.04); 
+            border: 1px solid rgba(255,255,255,0.06);
+            font-size: 11px; line-height: 1.5; color: #cbd5e1;
+          ">
             ${impactInfo.description}
           </div>
-          <div style="margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap;">
-            ${impactInfo.severity ? `
-              <span style="background: #dc2626; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600;">
-                ${impactInfo.severity}
-              </span>
-            ` : ''}
-            ${impactInfo.timeframe ? `
-              <span style="background: #2563eb; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600;">
-                ${impactInfo.timeframe}
-              </span>
-            ` : ''}
-            ${impactInfo.population ? `
-              <span style="background: #7c3aed; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600;">
-                ${impactInfo.population}
-              </span>
-            ` : ''}
+          
+          <!-- Tags -->
+          <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+            ${impactInfo.severity ? `<span style="background: ${threatColor}30; color: ${threatColor}; padding: 2px 7px; border-radius: 6px; font-size: 10px; font-weight: 600; border: 1px solid ${threatColor}40;">${impactInfo.severity}</span>` : ''}
+            ${impactInfo.timeframe ? `<span style="background: rgba(59,130,246,0.15); color: #60a5fa; padding: 2px 7px; border-radius: 6px; font-size: 10px; font-weight: 600; border: 1px solid rgba(59,130,246,0.25);">${impactInfo.timeframe}</span>` : ''}
+            ${impactInfo.population ? `<span style="background: rgba(139,92,246,0.15); color: #a78bfa; padding: 2px 7px; border-radius: 6px; font-size: 10px; font-weight: 600; border: 1px solid rgba(139,92,246,0.25);">${impactInfo.population}</span>` : ''}
           </div>
-        </div>
-        
-        <div style="background: #ecfdf5; padding: 8px; border-radius: 6px; margin-bottom: 12px;">
-          <div style="font-weight: 600; color: #065f46; margin-bottom: 4px;">📊 Detection Details</div>
-          <div style="color: #047857; font-size: 13px; line-height: 1.4;">
-            <div><strong>ID:</strong> ${threat.id}</div>
-            <div><strong>Lead Time:</strong> ${threat.lead_time_days ? `${threat.lead_time_days} days` : 'N/A'}</div>
-            ${threat.detection_details?.wind_speed ? `
-              <div><strong>Wind Speed:</strong> ${Math.round(threat.detection_details.wind_speed)} knots</div>
-            ` : ''}
-            ${threat.detection_details?.min_pressure_hpa ? `
-              <div><strong>Min Pressure:</strong> ${Math.round(threat.detection_details.min_pressure_hpa)} hPa</div>
-            ` : ''}
-            ${threat.detection_details?.cases ? `
-              <div><strong>Cases:</strong> ${threat.detection_details.cases}</div>
-            ` : ''}
-            ${threat.detection_details?.deaths ? `
-              <div><strong>Deaths:</strong> ${threat.detection_details.deaths}</div>
-            ` : ''}
-          </div>
-        </div>
-        
-        ${threat.detection_details?.description ? `
-          <div style="background: #f3f4f6; padding: 8px; border-radius: 6px; margin-bottom: 8px;">
-            <div style="font-weight: 600; color: #374151; margin-bottom: 4px;">📝 Analysis</div>
-            <div style="color: #6b7280; font-size: 13px; font-style: italic;">
-              "${threat.detection_details.description}"
+          
+          <!-- Details grid -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 10px;">
+            <div style="padding: 5px 8px; border-radius: 6px; background: rgba(255,255,255,0.03);">
+              <span style="color: #64748b;">Model</span><br/>
+              <span style="font-weight: 600; color: #e2e8f0;">${detectionModel}</span>
             </div>
+            <div style="padding: 5px 8px; border-radius: 6px; background: rgba(255,255,255,0.03);">
+              <span style="color: #64748b;">Lead Time</span><br/>
+              <span style="font-weight: 600; color: #e2e8f0;">${threat.lead_time_days ? `${threat.lead_time_days}d` : '—'}</span>
+            </div>
+            ${threat.detection_details?.wind_speed ? `
+            <div style="padding: 5px 8px; border-radius: 6px; background: rgba(255,255,255,0.03);">
+              <span style="color: #64748b;">Wind</span><br/>
+              <span style="font-weight: 600; color: #e2e8f0;">${Math.round(threat.detection_details.wind_speed)} kt</span>
+            </div>` : ''}
+            ${threat.detection_details?.min_pressure_hpa ? `
+            <div style="padding: 5px 8px; border-radius: 6px; background: rgba(255,255,255,0.03);">
+              <span style="color: #64748b;">Pressure</span><br/>
+              <span style="font-weight: 600; color: #e2e8f0;">${Math.round(threat.detection_details.min_pressure_hpa)} hPa</span>
+            </div>` : ''}
           </div>
-        ` : ''}
+          
+          ${threat.detection_details?.description ? `
+          <div style="font-size: 11px; font-style: italic; color: #94a3b8; padding: 6px 0 2px;">
+            "${threat.detection_details.description}"
+          </div>` : ''}
+        </div>
         
-        <div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #9ca3af;">
-          <div><strong>Detected:</strong> ${new Date(threat.created_at || threat.timestamp || Date.now()).toLocaleString()}</div>
-          <div style="margin-top: 4px; color: #059669; font-weight: 600;">
-            🔥 MoScripts Intelligence System (GraphCast + AI)
-          </div>
+        <!-- Footer -->
+        <div style="
+          padding: 8px 14px; 
+          border-top: 1px solid rgba(255,255,255,0.06); 
+          display: flex; justify-content: space-between; align-items: center;
+          font-size: 9px; color: #475569;
+        ">
+          <span>ID: ${threat.id}</span>
+          <span>${new Date(threat.created_at || threat.timestamp || Date.now()).toLocaleString()}</span>
         </div>
       </div>
     `;
@@ -448,14 +500,14 @@ export const mo_THREAT_RENDERER: MoScript<ThreatRendererInputs, ThreatRendererRe
     
     // Clear existing threat layers first
     const existingLayers = mapInstance.getStyle().layers?.filter(layer => 
-      layer.id.startsWith('threat-layer-')
+      layer.id.startsWith('threat-layer-') || layer.id.startsWith('threat-glow-') || layer.id.startsWith('threat-pulse-')
     ) || [];
     
     existingLayers.forEach(layer => {
       if (mapInstance.getLayer(layer.id)) {
         mapInstance.removeLayer(layer.id);
       }
-      const sourceId = layer.id.replace('threat-layer-', 'threat-');
+      const sourceId = layer.id.replace('threat-layer-', 'threat-').replace('threat-glow-', 'threat-').replace('threat-pulse-', 'threat-');
       if (mapInstance.getSource(sourceId)) {
         mapInstance.removeSource(sourceId);
       }
