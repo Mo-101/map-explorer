@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchSmokeTest } from "@/services/hazardsApi";
+import MoScriptsTooltip from "@/components/MoScriptsTooltip";
 
 type SmokeData = {
   database: string;
@@ -35,49 +36,59 @@ export default function BackendStatusBadge() {
 
   const ok = data?.database === "connected";
   const label = ok ? "NEON DB OK" : "NEON DB DOWN";
+  const sourceCount = data?.by_source ? Object.keys(data.by_source).length : 0;
 
   return (
     <div className="absolute top-5 right-5 z-20">
-      <div
-        className={`px-3 py-2 rounded-xl backdrop-blur-md border shadow-lg text-xs font-mono cursor-pointer transition-all ${
-          ok
-            ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-200"
-            : "bg-red-500/15 border-red-500/30 text-red-200"
-        }`}
-        onClick={() => setExpanded(v => !v)}
+      <MoScriptsTooltip
+        title="Backend Health Monitor"
+        description={ok
+          ? `Database connected. ${data?.active_threats ?? 0} active threats across ${sourceCount} data sources. Auto-refreshes every 60s.`
+          : "Backend connection lost. Threat data may be stale. System will retry automatically."
+        }
+        position="left"
       >
-        <div className="flex items-center justify-between gap-3">
-          <span className="font-semibold">{label}</span>
-          {ok && data?.active_threats !== undefined && (
-            <span className="opacity-90">{data.active_threats} active</span>
-          )}
-          <span className="opacity-60">{data?.checked_at ? new Date(data.checked_at).toLocaleTimeString() : "..."}</span>
-        </div>
-
-        {!ok && data?.error && (
-          <div className="opacity-80 mt-1">{data.error}</div>
-        )}
-
-        {expanded && ok && data?.by_source && (
-          <div className="mt-2 pt-2 border-t border-emerald-500/20 space-y-1">
-            {Object.entries(data.by_source).map(([src, info]) => (
-              <div key={src} className="flex justify-between gap-4">
-                <span className="text-emerald-300">{src}</span>
-                <span className="opacity-70">
-                  {info.active_count} active · {new Date(info.last_updated).toLocaleTimeString()}
-                </span>
-              </div>
-            ))}
-            {data.by_severity && (
-              <div className="mt-1 pt-1 border-t border-emerald-500/20 opacity-70">
-                {Object.entries(data.by_severity).map(([sev, count]) => (
-                  <span key={sev} className="mr-2">{sev}: {count}</span>
-                ))}
-              </div>
+        <div
+          className={`px-3 py-2 rounded-xl backdrop-blur-md border shadow-lg text-xs font-mono cursor-pointer transition-all ${
+            ok
+              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-200"
+              : "bg-red-500/15 border-red-500/30 text-red-200"
+          }`}
+          onClick={() => setExpanded(v => !v)}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-semibold">{label}</span>
+            {ok && data?.active_threats !== undefined && (
+              <span className="opacity-90">{data.active_threats} active</span>
             )}
+            <span className="opacity-60">{data?.checked_at ? new Date(data.checked_at).toLocaleTimeString() : "..."}</span>
           </div>
-        )}
-      </div>
+
+          {!ok && data?.error && (
+            <div className="opacity-80 mt-1">{data.error}</div>
+          )}
+
+          {expanded && ok && data?.by_source && (
+            <div className="mt-2 pt-2 border-t border-emerald-500/20 space-y-1">
+              {Object.entries(data.by_source).map(([src, info]) => (
+                <div key={src} className="flex justify-between gap-4">
+                  <span className="text-emerald-300">{src}</span>
+                  <span className="opacity-70">
+                    {info.active_count} active · {new Date(info.last_updated).toLocaleTimeString()}
+                  </span>
+                </div>
+              ))}
+              {data.by_severity && (
+                <div className="mt-1 pt-1 border-t border-emerald-500/20 opacity-70">
+                  {Object.entries(data.by_severity).map(([sev, count]) => (
+                    <span key={sev} className="mr-2">{sev}: {count}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </MoScriptsTooltip>
     </div>
   );
 }
