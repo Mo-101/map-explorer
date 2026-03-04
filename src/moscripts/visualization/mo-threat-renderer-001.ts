@@ -59,7 +59,173 @@ interface ThreatRendererResult {
 // =============================================================================
 
 /**
- * Create pulsing circle layer for a threat
+ * Draw a droplet shape on a canvas (for floods)
+ */
+function drawDroplet(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string) {
+  ctx.beginPath();
+  // Teardrop: arc at bottom, point at top
+  const tipY = cy - r * 1.4;
+  ctx.moveTo(cx, tipY);
+  ctx.bezierCurveTo(cx + r * 0.6, cy - r * 0.3, cx + r, cy + r * 0.2, cx, cy + r);
+  ctx.bezierCurveTo(cx - r, cy + r * 0.2, cx - r * 0.6, cy - r * 0.3, cx, tipY);
+  ctx.closePath();
+  const grad = ctx.createRadialGradient(cx - r * 0.2, cy - r * 0.2, r * 0.1, cx, cy, r * 1.3);
+  grad.addColorStop(0, lighten(color, 40));
+  grad.addColorStop(1, color);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+/**
+ * Draw a spiral shape on a canvas (for cyclones)
+ */
+function drawSpiral(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string) {
+  // Filled circle base
+  const grad = ctx.createRadialGradient(cx - r * 0.15, cy - r * 0.15, r * 0.05, cx, cy, r);
+  grad.addColorStop(0, lighten(color, 50));
+  grad.addColorStop(0.6, color);
+  grad.addColorStop(1, darken(color, 20));
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  // Spiral arms
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+  ctx.lineWidth = 2;
+  for (let arm = 0; arm < 3; arm++) {
+    ctx.beginPath();
+    const offset = (arm * Math.PI * 2) / 3;
+    for (let t = 0; t < Math.PI * 1.8; t += 0.05) {
+      const sr = r * 0.15 + (r * 0.7 * t) / (Math.PI * 1.8);
+      const x = cx + sr * Math.cos(t + offset);
+      const y = cy + sr * Math.sin(t + offset);
+      t === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+}
+
+/**
+ * Draw a diamond shape on a canvas (for earthquakes / landslides)
+ */
+function drawDiamond(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string) {
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r * 1.2);
+  ctx.lineTo(cx + r * 0.85, cy);
+  ctx.lineTo(cx, cy + r * 1.2);
+  ctx.lineTo(cx - r * 0.85, cy);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
+  grad.addColorStop(0, lighten(color, 35));
+  grad.addColorStop(1, darken(color, 10));
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+/**
+ * Draw a biohazard-style circle (for outbreaks)
+ */
+function drawBiohazard(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string) {
+  const grad = ctx.createRadialGradient(cx, cy, r * 0.1, cx, cy, r);
+  grad.addColorStop(0, lighten(color, 45));
+  grad.addColorStop(1, color);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  // Inner ring
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.45, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // 3 small circles
+  for (let i = 0; i < 3; i++) {
+    const angle = (i * Math.PI * 2) / 3 - Math.PI / 2;
+    ctx.beginPath();
+    ctx.arc(cx + r * 0.55 * Math.cos(angle), cy + r * 0.55 * Math.sin(angle), r * 0.22, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.fill();
+  }
+}
+
+function lighten(hex: string, pct: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const f = pct / 100;
+  return `rgb(${Math.min(255, Math.round(r + (255 - r) * f))},${Math.min(255, Math.round(g + (255 - g) * f))},${Math.min(255, Math.round(b + (255 - b) * f))})`;
+}
+
+function darken(hex: string, pct: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const f = 1 - pct / 100;
+  return `rgb(${Math.round(r * f)},${Math.round(g * f)},${Math.round(b * f)})`;
+}
+
+/**
+ * Build a canvas icon for the given threat type
+ */
+function buildThreatIcon(type: string, color: string, pixelSize: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  const dpr = window.devicePixelRatio || 1;
+  const s = pixelSize * dpr;
+  canvas.width = s;
+  canvas.height = s;
+  const ctx = canvas.getContext('2d')!;
+  ctx.scale(dpr, dpr);
+  const cx = pixelSize / 2;
+  const cy = pixelSize / 2;
+  const r = pixelSize * 0.32;
+
+  switch (type) {
+    case 'flood':
+      drawDroplet(ctx, cx, cy, r, color);
+      break;
+    case 'cyclone':
+      drawSpiral(ctx, cx, cy, r, color);
+      break;
+    case 'landslide':
+      drawDiamond(ctx, cx, cy, r, color);
+      break;
+    case 'outbreak':
+    case 'cholera':
+      drawBiohazard(ctx, cx, cy, r, color);
+      break;
+    case 'convergence':
+    default:
+      // Default filled circle
+      const grad = ctx.createRadialGradient(cx - r * 0.2, cy - r * 0.2, r * 0.05, cx, cy, r);
+      grad.addColorStop(0, lighten(color, 40));
+      grad.addColorStop(1, color);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      break;
+  }
+  return canvas;
+}
+
+/**
+ * Create a shaped, pulsating marker for a threat
  */
 function createPulsingCircle(
   map: MapLibreMap,
@@ -69,33 +235,30 @@ function createPulsingCircle(
 ): void {
   const lat = threat.center_lat ?? threat.latitude ?? 0;
   const lng = threat.center_lng ?? threat.longitude ?? 0;
-  
+
   const sourceId = `threat-${threat.id}`;
-  const layerId = `threat-layer-${threat.id}`;
+  const pulseLayerId = `threat-pulse-${threat.id}`;
   const glowLayerId = `threat-glow-${threat.id}`;
-  
-  // Remove existing source/layer if present
-  if (map.getLayer(glowLayerId)) map.removeLayer(glowLayerId);
-  if (map.getLayer(layerId)) map.removeLayer(layerId);
+  const symbolLayerId = `threat-layer-${threat.id}`;
+  const iconName = `icon-${threat.threat_type}-${threat.id}`;
+
+  // Remove existing layers / sources
+  [pulseLayerId, glowLayerId, symbolLayerId].forEach(lid => {
+    if (map.getLayer(lid)) map.removeLayer(lid);
+  });
   if (map.getSource(sourceId)) map.removeSource(sourceId);
-  
-  // Add source
+
+  // Add GeoJSON source
   map.addSource(sourceId, {
     type: 'geojson',
     data: {
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [lng, lat] },
-      properties: {
-        id: threat.id,
-        type: threat.threat_type,
-        confidence: threat.confidence,
-        severity: threat.severity
-      }
+      properties: { id: threat.id, type: threat.threat_type, confidence: threat.confidence, severity: threat.severity }
     }
   });
-  
-  // Outer pulse ring — animated via smooth opacity transition
-  const pulseLayerId = `threat-pulse-${threat.id}`;
+
+  // --- Pulse ring (circle layer, animated) ---
   map.addLayer({
     id: pulseLayerId,
     type: 'circle',
@@ -110,7 +273,7 @@ function createPulsingCircle(
     }
   });
 
-  // Mid glow ring
+  // --- Glow ring ---
   map.addLayer({
     id: glowLayerId,
     type: 'circle',
@@ -122,24 +285,29 @@ function createPulsingCircle(
       'circle-stroke-width': 0,
     }
   });
-  
-  // Main circle layer
+
+  // --- Shaped icon via symbol layer ---
+  const iconPx = Math.round(size * 2.4);
+  const canvas = buildThreatIcon(threat.threat_type, color, iconPx);
+  const iconCtx = canvas.getContext('2d')!;
+  const imgData = iconCtx.getImageData(0, 0, canvas.width, canvas.height);
+  if (map.hasImage(iconName)) map.removeImage(iconName);
+  map.addImage(iconName, { width: canvas.width, height: canvas.height, data: new Uint8Array(imgData.data.buffer) }, { pixelRatio: window.devicePixelRatio || 1 });
+
   map.addLayer({
-    id: layerId,
-    type: 'circle',
+    id: symbolLayerId,
+    type: 'symbol',
     source: sourceId,
-    paint: {
-      'circle-radius': size,
-      'circle-color': color,
-      'circle-opacity': 0.9,
-      'circle-stroke-width': 2,
-      'circle-stroke-color': 'rgba(255, 255, 255, 0.8)',
-      'circle-stroke-opacity': 1
-    }
+    layout: {
+      'icon-image': iconName,
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+      'icon-size': 1,
+    },
   });
 
-  // Smooth pulsating animation using requestAnimationFrame
-  let phase = Math.random() * Math.PI * 2; // offset so markers don't sync
+  // --- Smooth pulsating animation ---
+  let phase = Math.random() * Math.PI * 2;
   const speed = 0.025;
   let animId: number;
   const animate = () => {
@@ -151,13 +319,12 @@ function createPulsingCircle(
         map.setPaintProperty(pulseLayerId, 'circle-stroke-opacity', 0.12 + pulse * 0.2);
         map.setPaintProperty(pulseLayerId, 'circle-opacity', 0.04 + pulse * 0.08);
       }
-    } catch { /* layer removed */ return; }
+    } catch { return; }
     animId = requestAnimationFrame(animate);
   };
   animId = requestAnimationFrame(animate);
 
-  // Cleanup when source is removed
-  map.on('sourcedata', function onSourceData(e: any) {
+  map.on('sourcedata', function onSourceData() {
     if (!map.getSource(sourceId)) {
       cancelAnimationFrame(animId);
       map.off('sourcedata', onSourceData);
