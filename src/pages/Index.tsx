@@ -14,6 +14,7 @@ import ClusterPolygonLayer from "@/components/ClusterPolygonLayer";
 import ClusterStatsBadge from "@/components/ClusterStatsBadge";
 import GdacsRiskSummary from "@/components/GdacsRiskSummary";
 import FloodComparisonPanel from "@/components/FloodComparisonPanel";
+import WeatherCard from "@/components/WeatherCard";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
 import { orchestrator, emit } from "@/moscripts";
 import { mo_THREAT_RENDERER } from "@/moscripts";
@@ -211,6 +212,7 @@ const Index = () => {
       />
 
       <GdacsRiskSummary />
+      <WeatherCard />
 
       <MapLegend
         threatCount={allThreats.length}
