@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Cloud, CloudRain, CloudSnow, Sun, Wind, Zap, Droplets, Loader2, MapPin } from "lucide-react";
+import { Cloud, CloudRain, CloudSnow, Sun, Wind, Zap, Droplets, Loader2, MapPin, Mountain, Layers as LayersIcon } from "lucide-react";
 
 type WeatherData = {
   name: string;
