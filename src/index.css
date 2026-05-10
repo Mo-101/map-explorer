@@ -309,3 +309,7 @@
   0%,100% { transform: translateX(0); }
   50% { transform: translateX(-15px); }
 }
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
