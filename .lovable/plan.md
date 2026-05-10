@@ -1,128 +1,133 @@
-## Consolidation & Hardening Plan — Review, Cleanup, and New Sources
 
-### Current State Assessment
+# The Phantom — Whisper Engine
 
-**What's working (verified):**
-
-- `neon-health` — healthy, schema auto-init with `last_seen_at`
-- `neon-threats` — returns `by_source`, `by_severity`, `active_run_ids`
-- `ingest-gfs` — two-layer cleanup before early-return, `last_seen_at` on upsert
-- `ingest-gpm` — same pattern, 35 monitoring points
-- `ingest-jtwc` — same pattern, NHC RSS + Indian Ocean monitoring
-- `ai-situational-summary` — uses Lovable AI gateway, no API key needed
-- `ClusterStatsBadge` — live on map overlay
-- Situational-markers 404 — resolved (hooks + components deleted)
-
-**What's broken or dead:**
-
-
-| Issue                                                                                                                                | Type              | Impact                                                  |
-| ------------------------------------------------------------------------------------------------------------------------------------ | ----------------- | ------------------------------------------------------- |
-| `azureService.ts` line 9 — **Azure API key hardcoded in frontend source**                                                            | CRITICAL SECURITY | Key is baked into Vite bundle, exposed to every browser |
-| `src/lib/db.ts` — imports `pg` (Node.js), unreachable from Vite browser                                                              | Dead code         | Build noise                                             |
-| `src/lib/redis.ts` — no-op stub, never used                                                                                          | Dead code         | Confusion                                               |
-| `src/lib/circuit-breaker.ts` — depends on redis stub, never imported                                                                 | Dead code         | Confusion                                               |
-| `src/lib/tronWallet.ts` — TronLink wallet integration, never imported                                                                | Dead code         | Confusion                                               |
-| `src/services/ingestion-worker.ts` — imports `db.ts`, never imported anywhere                                                        | Dead code         | Confusion                                               |
-| `src/hooks/useWeatherLayers.ts.bak` — backup file                                                                                    | Dead code         | Clutter                                                 |
-| `src/components/MoScriptsTest.tsx` — test component, not used in any page                                                            | Dead code         | Clutter                                                 |
-| `src/components/TooltipTest.tsx` — test component, not used in any page                                                              | Dead code         | Clutter                                                 |
-| `src/model-service/` — entire Python FastAPI backend (1385-line `app.py`, GraphCast, IBTrACS, etc.) — cannot run in this environment | Unreachable       | Major confusion — makes devs think Python is live       |
-| `requirements_afro_storm.txt` — Python requirements for the above                                                                    | Dead code         | Clutter                                                 |
-
+GraphCast-powered weather intelligence as a sovereign microservice with its own isolated Neo4j subgraph. No coupling to the hazard/POE graph. Coverage: Africa regional grid at GraphCast's native 0.25° resolution. Schema defined from first principles for `mo-weather-stormscribe-003`.
 
 ---
 
-### Implementation Plan
+## 1. Coverage grid
 
-#### Phase 1: Security Fix — Remove Hardcoded Azure Key
+- Bounding box: lat `-40° → +40°`, lon `-20° → +55°` (Africa + immediate maritime margins)
+- Resolution: `0.25°` (GraphCast native)
+- Node count: ~321 × 301 ≈ **96,000 `:WeatherLocation` nodes** (one-time seed)
+- Each grid point carries a deterministic ID: `g_{lat_idx}_{lon_idx}` so MERGE is idempotent
 
-`**src/services/azureService.ts**` has the Azure API key (`4cq1bN...`) hardcoded on line 9. This is a private secret exposed in the browser bundle.
+## 2. Neo4j subgraph schema (Whisper Graph)
 
-**Fix:** Move Azure AI calls to an edge function that reads the key from secrets. Or, since the project already has `ai-situational-summary` using Lovable AI gateway (no key needed), refactor `azureService.ts` to route through a new edge function that uses Lovable AI instead of Azure directly.
+Fully isolated namespace. No shared labels with the hazard graph.
 
-- Create edge function `ai-analyze` that accepts a prompt and returns AI analysis via Lovable AI gateway (same pattern as `ai-situational-summary`)
-- Update `azureService.ts` to call this edge function instead of Azure directly
-- Remove hardcoded Azure credentials from frontend code
-- Similarly update `claudeService.ts` to use the same edge function (it already tries a backend proxy)
+### Node labels
 
-#### Phase 2: Dead Code Removal
-
-Delete all files that are unreachable from the Vite frontend:
-
-**Files to delete:**
-
-- `src/lib/db.ts` (Node.js `pg` — can't run in browser)
-- `src/lib/redis.ts` (no-op stub, unused)
-- `src/lib/circuit-breaker.ts` (depends on redis, unused)
-- `src/lib/tronWallet.ts` (TronLink wallet, unused)
-- `src/services/ingestion-worker.ts` (imports `db.ts`, unused)
-- `src/hooks/useWeatherLayers.ts.bak` (backup file)
-- `src/components/MoScriptsTest.tsx` (test, not in any route)
-- `src/components/TooltipTest.tsx` (test, not in any route)
-- `requirements_afro_storm.txt` (Python deps, no Python runtime)
-- `src/model-service/` directory (entire Python backend — 20+ files, ~5000 lines, cannot execute in this architecture)
-
-**Note:** The `model-service` Python code represents future aspirational work for a separate Python backend. If you want to preserve it for a future deployment, we can move it to a top-level `python-backend/` directory with a clear README stating it's not deployed. Otherwise, we delete it entirely.
-
-#### Phase 3: Add New Data Sources (HTTP-API Edge Functions)
-
-Three new edge functions, all following the established pattern (cleanup before early-return, `last_seen_at` on upsert, two-layer stale cleanup):
-
-**3a. `ingest-gdacs` — Global Disaster Alert & Coordination System**
-
-- Source: `https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?alertlevel=Green;Orange;Red&eventtype=EQ,TC,FL,VO,DR&limit=50`
-- Returns JSON with earthquakes, cyclones, floods, volcanoes, droughts
-- Filter to Africa bounding box
-- Upsert into `hazard_alerts` with `source = 'gdacs'`
-
-**3b. `ingest-reliefweb` — ReliefWeb Humanitarian Reports**
-
-- Source: `https://api.reliefweb.int/v1/disasters?appname=afrostorm&filter[field]=country.iso3&filter[value]=...&limit=20`
-- Returns JSON with active disasters
-- Map to hazard types, store with `source = 'reliefweb'`
-
-**3c. `smoke-test` — System Health Probe**
-
-- Calls Neon to check: DB connectivity, last ingestion timestamp per source, active threat counts, stale alert counts
-- Returns a consolidated JSON report
-- No JWT required, lightweight
-
-#### Phase 4: Update Frontend API Layer
-
-- Add `fetchGDACS()` and `fetchReliefWeb()` trigger functions to `hazardsApi.ts`
-- Add `fetchSmokeTest()` for the smoke test endpoint
-- Update `BackendStatusBadge` to show last ingestion times from smoke test data
-
-#### Phase 5: Register New Functions
-
-Add to `supabase/config.toml`:
-
-```toml
-[functions.ingest-gdacs]
-verify_jwt = false
-
-[functions.ingest-reliefweb]
-verify_jwt = false
-
-[functions.smoke-test]
-verify_jwt = false
-
-[functions.ai-analyze]
-verify_jwt = false
+```text
+(:WeatherLocation { id, lat, lon, lat_idx, lon_idx, h3_r5 })
+(:ForecastCycle   { id, base_time, model_version, ingested_at, status })
+(:ForecastNode    { id, cycle_id, location_id, lead_hours, valid_time,
+                    t2m, u10, v10, msl, tp, tcwv,
+                    z500, t850, q700,
+                    wind_speed_10m, precip_rate,
+                    flood_risk, storm_risk, heat_risk })
+(:Variable        { name, unit, level })   // dictionary node, optional
+(:Anomaly         { id, kind, severity, threshold, triggered_at })
 ```
 
----
+### Relationships
 
-### Summary of Changes
+```text
+(:WeatherLocation)-[:HAS_FORECAST]->(:ForecastNode)
+(:ForecastCycle)-[:PRODUCED]->(:ForecastNode)
+(:ForecastNode)-[:NEXT]->(:ForecastNode)        // per-location time chain
+(:ForecastNode)-[:TRIGGERED]->(:Anomaly)
+(:Anomaly)-[:AT]->(:WeatherLocation)
+```
 
+### Indexes (covers all three query patterns)
 
-| Action                                | Files                                                           | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Security: Move AI to edge function    | Create `ai-analyze`, edit `azureService.ts`, `claudeService.ts` | Security fix                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Delete dead code                      | 10 files + `model-service/` directory                           | Cleanup                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| New edge function: `ingest-gdacs`     | Create                                                          | Feature                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| New edge function: `ingest-reliefweb` | Create                                                          | Feature                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| New edge function: `smoke-test`       | Create                                                          | Feature                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Update config.toml                    | Edit                                                            | Config                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| Update `hazardsApi.ts`                | Edit                                                            | Integration Excellent consolidation plan. This addresses the critical security issue, removes dead code, and adds valuable new data sources—all within the existing Deno Edge Function architecture. The plan is complete, but I'll add a few practical notes:### 🔐 Security Fix – Azure Key- The `ai-analyze` edge function will use the same Lovable AI gateway as `ai-situational-summary` (no API key needed). - Update `azureService.ts` and `claudeService.ts` to POST to `/functions/v1/ai-analyze` with the same payload structure. - This removes the hardcoded key entirely from the frontend bundle.### 🧹 Dead Code Removal- **model-service/**: If you want to keep it as a reference for a future Python backend, move it to `python-backend/` at the project root and add a `README.md` explaining it's aspirational and not deployed. Otherwise, delete it entirely. - The other files (db.ts, redis.ts, etc.) are safe to delete—they aren't used anywhere.### 🌍 New Edge FunctionsAll three follow the established pattern:- **Two‑layer stale cleanup** (run‑based + 72h TTL) before early‑return.- **last_seen_at** set on every upsert.- **Neon upsert** with `ON CONFLICT` handling.**ingest-gdacs**:- Africa bounding box: `[ -35, -20, 37, 52 ]` (south, west, north, east).- Map GDACS `eventtype` to your hazard types:  - `EQ` → `earthquake`  - `TC` → `cyclone`  - `FL` → `flood`  - `VO` → `volcano`  - `DR` → `drought` - Severity: map `alertlevel` `Red` → `extreme`, `Orange` → `high`, `Green` → `medium`). - Use the GDACS API:  `https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?alertlevel=Green;Orange;Red&eventtype=EQ,TC,FL,VO,DR&limit=50`**ingest-reliefweb**:- Query disasters in Africa:  `https://api.reliefweb.int/v1/disasters?appname=afrostorm&filter[field]=country.iso3&filter[value]=...`  You'll need a list of ISO3 codes for Africa (can be hardcoded). - Fields: `title`, `date`, `type`, `country`, `lat`, `lon` (if available). - Upsert with source `reliefweb`.**smoke-test**:- Returns JSON like:  ```json { "database": "connected", "last_ingestion": { "gfs": "2025-03-04T12:00Z", "gpm": "2025-03-04T09:00Z", ... }, "active_threats": 57, "stale_alerts": 0, "by_source": { "gfs": 54, "seed": 3 } } ```- No JWT required – can be called from frontend to display status.### ⚙️ Frontend Updates- Add `fetchGDACS()`, `fetchReliefWeb()`, and `fetchSmokeTest()` to `hazardsApi.ts`. - Update `BackendStatusBadge` to optionally show last ingestion times from smoke test. - The `smoke-test` can be polled every 60 seconds alongside the main threat fetch.### 📝 config.tomlAdd the three new functions with `verify_jwt = false` and `enabled = true`.---All steps are clearly defined. If you're ready, I can begin implementing these changes one by one. Which part would you like to tackle first? |
+```cypher
+CREATE CONSTRAINT loc_id   IF NOT EXISTS FOR (l:WeatherLocation) REQUIRE l.id IS UNIQUE;
+CREATE CONSTRAINT cyc_id   IF NOT EXISTS FOR (c:ForecastCycle)   REQUIRE c.id IS UNIQUE;
+CREATE CONSTRAINT fn_id    IF NOT EXISTS FOR (f:ForecastNode)    REQUIRE f.id IS UNIQUE;
+
+CREATE POINT INDEX loc_point   IF NOT EXISTS FOR (l:WeatherLocation) ON (l.point);
+CREATE INDEX fn_valid_time     IF NOT EXISTS FOR (f:ForecastNode) ON (f.valid_time);
+CREATE INDEX fn_lead           IF NOT EXISTS FOR (f:ForecastNode) ON (f.lead_hours);
+CREATE INDEX fn_flood_risk     IF NOT EXISTS FOR (f:ForecastNode) ON (f.flood_risk);
+CREATE INDEX fn_precip_rate    IF NOT EXISTS FOR (f:ForecastNode) ON (f.precip_rate);
+CREATE INDEX fn_msl            IF NOT EXISTS FOR (f:ForecastNode) ON (f.msl);
+```
+
+### APOC reflex triggers (anomaly scans)
+
+- On `ForecastNode` create → if `msl < 1000 hPa`, `precip_rate > 25 mm/h`, or `wind_speed_10m > 25 m/s` → MERGE `:Anomaly` and link.
+
+## 3. Microservice — `mostar-graphcast-engine`
+
+```text
+mostar-graphcast-engine/
+├── Dockerfile                  # python:3.10 + JAX CPU (swap to CUDA later)
+├── requirements.txt            # jax, haiku, xarray, redis, neo4j, cfgrib
+├── engine/
+│   ├── worker.py               # Redis BLPOP loop
+│   ├── inference.py            # GraphCast model load + autoregressive rollout
+│   ├── data_adapter.py         # GFS GRIB → xarray with year/day progress features
+│   ├── grid.py                 # Africa bbox slicing, lat_idx/lon_idx mapping
+│   ├── persist.py              # xarray → Cypher MERGE batched UNWIND writer
+│   └── reflex.py               # post-write anomaly verification
+├── seed/
+│   └── seed_locations.py       # one-shot: MERGE 96k :WeatherLocation nodes
+└── config.py                   # NEO4J_URI, REDIS_URL, MODEL_PATH, BBOX
+```
+
+### Queue payload contract
+
+```json
+{ "cycle_id": "gc_2026051000",
+  "base_time": "2026-05-10T00:00:00Z",
+  "source": "gfs",
+  "lead_hours": [6, 12, 24, 48, 72, 120, 168, 240] }
+```
+
+### Persistence pattern (batched UNWIND, idempotent)
+
+```cypher
+UNWIND $rows AS r
+MATCH  (l:WeatherLocation { id: r.location_id })
+MERGE  (c:ForecastCycle   { id: r.cycle_id })
+  ON CREATE SET c.base_time = datetime(r.base_time), c.model_version = r.model_version
+MERGE  (f:ForecastNode    { id: r.fn_id })
+  ON CREATE SET f += r.props
+MERGE  (l)-[:HAS_FORECAST]->(f)
+MERGE  (c)-[:PRODUCED]->(f);
+```
+
+`NEXT` chain stitched in a second pass per location, ordered by `lead_hours`.
+
+## 4. Bridge to the existing app
+
+- `supabase/functions/whisper-query/` — thin Deno proxy that forwards Cypher reads to the Whisper Graph (read-only) so the React app can query forecasts without exposing Neo4j creds.
+- `src/services/whisperService.ts` — typed client matching the three query patterns (point lookup, rollout, anomaly scan).
+- No UI changes in this plan — schema + service first.
+
+## 5. Build order
+
+1. Seed script + schema migration (constraints, indexes, 96k `:WeatherLocation` MERGE)
+2. `data_adapter.py` — GFS → xarray with derived features (most fragile, do early)
+3. `inference.py` — GraphCast rollout on a fixture
+4. `persist.py` — batched UNWIND + NEXT chain
+5. `reflex.py` + APOC triggers — anomalies
+6. `worker.py` — Redis consumer wiring
+7. Dockerfile + deploy target
+8. `whisper-query` edge function + `whisperService.ts`
+
+## 6. Secrets needed before step 1
+
+- `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` (Whisper Graph instance)
+- `REDIS_URL`
+- `GRAPHCAST_MODEL_PATH` (or bucket URL for `params/` and `stats/`)
+- GFS source already covered by existing `ingest-gfs`
+
+## 7. Open decisions for after approval
+
+- Deployment target (Cloud Run CPU vs GCP VM with GPU) — affects Dockerfile base image
+- Cycle cadence (6h matches GFS; do we persist all 40 lead steps or only the 8 listed above?)
+- Retention policy (drop `ForecastNode`s older than N cycles to keep graph lean)
+
