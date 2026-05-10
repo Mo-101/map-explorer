@@ -35,7 +35,7 @@ function precipRadius(mm: number): number {
   return 55;
 }
 
-import { fnUrl, authHeaders } from "@/services/apiBase";
+
 
 const IMERGRainfallLayer = ({ map, visible, mode }: IMERGRainfallLayerProps) => {
   const [data, setData] = useState<PrecipPoint[]>([]);
