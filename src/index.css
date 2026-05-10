@@ -201,3 +201,111 @@
     transform: scale(1);
   }
 }
+
+/* ============ WeatherCard animated backgrounds ============ */
+.weather-bg {
+  position: absolute; inset: 0; overflow: hidden;
+  background: linear-gradient(160deg, #4a6b8a, #2c3e50);
+}
+.weather-sunny { background: linear-gradient(160deg, #f7b733, #fc4a1a); }
+.weather-clear-night { background: linear-gradient(160deg, #0f2027, #203a43, #2c5364); }
+.weather-cloudy { background: linear-gradient(160deg, #54717a, #3c4f56); }
+.weather-rain { background: linear-gradient(160deg, #3a6073, #16222a); }
+.weather-storm { background: linear-gradient(160deg, #1a1a2e, #16213e, #0f0f1e); }
+.weather-snow { background: linear-gradient(160deg, #83a4d4, #b6fbff); }
+.weather-cyclone { background: radial-gradient(circle, #2c3e50, #0a0a1a); }
+.weather-mist { background: linear-gradient(160deg, #757f9a, #d7dde8); }
+
+/* Sun rays */
+.sun-rays {
+  position: absolute; top: -40%; right: -30%;
+  width: 200px; height: 200px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,230,120,0.9) 0%, rgba(255,180,50,0.4) 40%, transparent 70%);
+  animation: sun-pulse 4s ease-in-out infinite;
+}
+@keyframes sun-pulse {
+  0%,100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+
+/* Rain */
+.rain-container { position: absolute; inset: 0; }
+.raindrop {
+  position: absolute; top: -10%; width: 1px; height: 18px;
+  background: linear-gradient(transparent, rgba(180,220,255,0.8));
+  animation: rain-fall linear infinite;
+}
+.raindrop.storm { height: 24px; background: linear-gradient(transparent, rgba(200,230,255,0.95)); }
+@keyframes rain-fall {
+  0% { transform: translateY(-20px); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translateY(220px); opacity: 0; }
+}
+
+/* Lightning */
+.lightning {
+  position: absolute; inset: 0; background: rgba(255,255,255,0);
+  animation: flash 5s infinite;
+  pointer-events: none;
+}
+@keyframes flash {
+  0%, 92%, 100% { background: rgba(255,255,255,0); }
+  93% { background: rgba(255,255,255,0.6); }
+  94% { background: rgba(255,255,255,0); }
+  96% { background: rgba(255,255,255,0.4); }
+  97% { background: rgba(255,255,255,0); }
+}
+
+/* Snow */
+.snow-container { position: absolute; inset: 0; }
+.snowflake {
+  position: absolute; top: -10%; color: rgba(255,255,255,0.9); font-size: 12px;
+  animation: snow-fall linear infinite;
+}
+@keyframes snow-fall {
+  0% { transform: translateY(-20px) translateX(0); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translateY(220px) translateX(20px); opacity: 0; }
+}
+
+/* Cyclone spiral */
+.cyclone-spiral {
+  position: absolute; top: 50%; left: 50%;
+  width: 300px; height: 300px; margin: -150px 0 0 -150px;
+  background: conic-gradient(from 0deg, transparent, rgba(255,255,255,0.15), transparent, rgba(120,180,255,0.25), transparent);
+  border-radius: 50%;
+  animation: spin 6s linear infinite;
+  filter: blur(2px);
+}
+.cyclone-spiral::after {
+  content: ''; position: absolute; inset: 25%;
+  background: conic-gradient(from 180deg, transparent, rgba(255,255,255,0.2), transparent);
+  border-radius: 50%;
+  animation: spin 3s linear infinite reverse;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Stars (clear night) */
+.stars-container { position: absolute; inset: 0; }
+.star {
+  position: absolute; width: 2px; height: 2px; background: #fff; border-radius: 50%;
+  animation: twinkle 3s ease-in-out infinite;
+}
+@keyframes twinkle {
+  0%,100% { opacity: 0.3; }
+  50% { opacity: 1; box-shadow: 0 0 4px #fff; }
+}
+
+/* Cloud drift */
+.cloud-drift {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 40%, rgba(255,255,255,0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 60%, rgba(255,255,255,0.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 90% 30%, rgba(255,255,255,0.1) 0%, transparent 50%);
+  animation: cloud-move 20s ease-in-out infinite;
+}
+@keyframes cloud-move {
+  0%,100% { transform: translateX(0); }
+  50% { transform: translateX(-15px); }
+}
