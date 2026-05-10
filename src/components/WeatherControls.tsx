@@ -1,14 +1,14 @@
-import { Play, Pause } from "lucide-react";
+import { Play, Pause, Wind, Navigation, CloudRain, Gauge, Radar, Thermometer } from "lucide-react";
 import type { WeatherLayerType } from "@/hooks/useWeatherLayers";
 import MoScriptsTooltip from "@/components/MoScriptsTooltip";
 
-const LAYER_OPTIONS: { id: WeatherLayerType; label: string; tip: string }[] = [
-  { id: "wind", label: "Wind", tip: "GFS wind speed and direction overlay." },
-  { id: "wind-arrows", label: "Wind Arrows", tip: "Directional wind vectors showing atmospheric flow." },
-  { id: "precipitation", label: "Precipitation", tip: "GFS precipitation forecast layer." },
-  { id: "pressure", label: "Pressure", tip: "Mean sea level pressure contours." },
-  { id: "radar", label: "Radar", tip: "Near-real-time radar reflectivity." },
-  { id: "temperature", label: "Temperature", tip: "Surface temperature analysis." },
+const LAYER_OPTIONS: { id: WeatherLayerType; label: string; short: string; tip: string; Icon: typeof Wind }[] = [
+  { id: "wind", label: "Wind", short: "Wind", tip: "GFS wind speed and direction overlay.", Icon: Wind },
+  { id: "wind-arrows", label: "Wind Arrows", short: "Arrows", tip: "Directional wind vectors showing atmospheric flow.", Icon: Navigation },
+  { id: "precipitation", label: "Precipitation", short: "Precip", tip: "GFS precipitation forecast layer.", Icon: CloudRain },
+  { id: "pressure", label: "Pressure", short: "Pres", tip: "Mean sea level pressure contours.", Icon: Gauge },
+  { id: "radar", label: "Radar", short: "Radar", tip: "Near-real-time radar reflectivity.", Icon: Radar },
+  { id: "temperature", label: "Temperature", short: "Temp", tip: "Surface temperature analysis.", Icon: Thermometer },
 ];
 
 interface WeatherControlsProps {
