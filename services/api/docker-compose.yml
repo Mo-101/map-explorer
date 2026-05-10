@@ -1,0 +1,31 @@
+# Deploy on the same VPS as Neo4j.
+# Caddy auto-issues TLS for api.mostarindustries.com.
+services:
+  api:
+    build: .
+    container_name: mostar-api
+    restart: unless-stopped
+    env_file: .env
+    expose:
+      - "8080"
+    networks: [web]
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: mostar-api-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [web]
+
+networks:
+  web:
+
+volumes:
+  caddy_data:
+  caddy_config:
