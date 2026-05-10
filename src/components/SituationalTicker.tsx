@@ -162,20 +162,14 @@ const severityDot: Record<string, string> = {
 let cachedSummary: { text: string; ts: number } | null = null;
 const AI_CACHE_MS = 5 * 60 * 1000;
 
-const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID || "tciktazfwokzbxnutpvh";
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || `https://${PROJECT_ID}.supabase.co`;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
+import { fnUrl, authHeaders } from "@/services/apiBase";
 
 async function fetchAISummary(threats: any[]): Promise<string | null> {
   if (cachedSummary && Date.now() - cachedSummary.ts < AI_CACHE_MS) return cachedSummary.text;
   try {
-    const resp = await fetch(`${SUPABASE_URL}/functions/v1/ai-situational-summary`, {
+    const resp = await fetch(fnUrl("ai-situational-summary"), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-      },
+      headers: authHeaders(),
       body: JSON.stringify({ threats }),
     });
     if (!resp.ok) return null;
