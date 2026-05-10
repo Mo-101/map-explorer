@@ -70,11 +70,7 @@ async function call<T>(kind: string, params: Record<string, unknown>): Promise<W
   try {
     const res = await fetch(FN_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${ANON}`,
-        apikey: ANON,
-      },
+      headers: authHeaders(),
       body: JSON.stringify({ kind, params }),
     });
     if (!res.ok) {
