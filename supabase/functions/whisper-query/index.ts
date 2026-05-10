@@ -82,25 +82,28 @@ function degraded(reason: string, status = 200) {
 
 async function runCypher(
   uri: string,
-  user: string,
-  password: string,
+  user: string | undefined,
+  password: string | undefined,
   database: string,
   cypher: string,
   params: Record<string, unknown>,
 ): Promise<unknown[]> {
-  // Use Neo4j HTTP Query API (bolt isn't reachable from Deno edge).
-  // Format: https://<host>:7473/db/<database>/query/v2  (Aura/Neo4j 5+).
-  const httpUrl = uri
+  // Normalize URI: accept bolt://, neo4j://, or plain https:// (tunnel).
+  let httpUrl = uri
     .replace(/^bolt(\+s|\+ssc)?:\/\//, "https://")
-    .replace(/^neo4j(\+s|\+ssc)?:\/\//, "https://")
-    .replace(/:7687$/, ":7473");
+    .replace(/^neo4j(\+s|\+ssc)?:\/\//, "https://");
+  // Strip default bolt port if present
+  httpUrl = httpUrl.replace(/:7687(\/|$)/, "$1").replace(/\/$/, "");
 
-  const url = `${httpUrl.replace(/\/$/, "")}/db/${database}/query/v2`;
-  const auth = "Basic " + btoa(`${user}:${password}`);
+  const url = `${httpUrl}/db/${database}/query/v2`;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (user && password) {
+    headers.Authorization = "Basic " + btoa(`${user}:${password}`);
+  }
 
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: auth },
+    headers,
     body: JSON.stringify({ statement: cypher, parameters: params }),
   });
 
@@ -109,7 +112,7 @@ async function runCypher(
     throw new Error(`Neo4j ${res.status}: ${text}`);
   }
   const json = await res.json();
-  // Query API v2 returns { data: { fields, values: [[...], ...] } }
+  // Query API v2: { data: { fields, values: [[...], ...] } }
   const fields: string[] = json?.data?.fields ?? [];
   const values: unknown[][] = json?.data?.values ?? [];
   return values.map((row) =>
@@ -145,7 +148,7 @@ Deno.serve(async (req) => {
   const NEO4J_PASSWORD = Deno.env.get("NEO4J_PASSWORD");
   const NEO4J_DATABASE = Deno.env.get("NEO4J_DATABASE") ?? "neo4j";
 
-  if (!NEO4J_URI || !NEO4J_USER || !NEO4J_PASSWORD) {
+  if (!NEO4J_URI) {
     return degraded("Whisper Graph not configured yet");
   }
 
