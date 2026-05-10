@@ -20,13 +20,13 @@ interface QueryRequest {
 
 const CYPHER: Record<QueryKind, string> = {
   point: `
-    MATCH (l:WeatherLocation)
+    MATCH (l:W_Location)
     WHERE point.distance(l.point, point({latitude: $lat, longitude: $lon, srid: 4326})) < 25000
     WITH l ORDER BY point.distance(l.point, point({latitude: $lat, longitude: $lon, srid: 4326})) LIMIT 1
-    MATCH (l)-[:HAS_FORECAST]->(f:ForecastNode)
+    MATCH (l)-[:HAS_FORECAST]->(f:W_ForecastNode)
     WHERE ($cycle_id IS NULL OR f.cycle_id = $cycle_id)
       AND ($lead_hours IS NULL OR f.lead_hours = $lead_hours)
-    RETURN l.id AS location_id, l.lat AS lat, l.lon AS lon,
+    RETURN l.id AS location_id, l.lat AS lat, l.lon AS lon, l.region AS region,
            f.cycle_id AS cycle_id, f.lead_hours AS lead_hours,
            f.valid_time AS valid_time,
            f.t2m AS t2m, f.msl AS msl, f.tp AS tp,
@@ -35,13 +35,13 @@ const CYPHER: Record<QueryKind, string> = {
     ORDER BY f.lead_hours ASC LIMIT 64
   `,
   rollout: `
-    MATCH (l:WeatherLocation)
+    MATCH (l:W_Location)
     WHERE point.distance(l.point, point({latitude: $lat, longitude: $lon, srid: 4326})) < 25000
     WITH l ORDER BY point.distance(l.point, point({latitude: $lat, longitude: $lon, srid: 4326})) LIMIT 1
-    MATCH (l)-[:HAS_FORECAST]->(f:ForecastNode)
+    MATCH (l)-[:HAS_FORECAST]->(f:W_ForecastNode)
     WHERE ($cycle_id IS NULL OR f.cycle_id = $cycle_id)
       AND f.lead_hours <= coalesce($max_lead_hours, 240)
-    RETURN l.id AS location_id, l.lat AS lat, l.lon AS lon,
+    RETURN l.id AS location_id, l.lat AS lat, l.lon AS lon, l.region AS region,
            collect({
              lead_hours: f.lead_hours,
              valid_time: f.valid_time,
@@ -52,18 +52,19 @@ const CYPHER: Record<QueryKind, string> = {
            }) AS series
   `,
   anomalies: `
-    MATCH (a:Anomaly)-[:AT]->(l:WeatherLocation)
-    WHERE ($kind IS NULL OR a.kind = $kind)
-      AND ($since IS NULL OR a.triggered_at >= datetime($since))
+    MATCH (v:ViolationFlag { source: 'whisper' })-[:AT]->(l:W_Location)
+    WHERE ($kind IS NULL OR v.kind = $kind)
+      AND ($status IS NULL OR v.status = $status)
+      AND ($since IS NULL OR v.triggered_at >= datetime($since))
       AND ($lat_min IS NULL OR (l.lat >= $lat_min AND l.lat <= $lat_max
                             AND l.lon >= $lon_min AND l.lon <= $lon_max))
-    OPTIONAL MATCH (f:ForecastNode)-[:TRIGGERED]->(a)
-    RETURN a.id AS id, a.kind AS kind, a.severity AS severity,
-           a.threshold AS threshold, a.triggered_at AS triggered_at,
-           l.id AS location_id, l.lat AS lat, l.lon AS lon,
-           f.cycle_id AS cycle_id, f.lead_hours AS lead_hours,
-           f.valid_time AS valid_time
-    ORDER BY a.severity DESC LIMIT 500
+    OPTIONAL MATCH (f:W_ForecastNode)-[:VIOLATES_THRESHOLD]->(v)
+    RETURN v.id AS id, v.kind AS kind, v.severity AS severity,
+           v.status AS status, v.triggered_at AS triggered_at,
+           l.id AS location_id, l.lat AS lat, l.lon AS lon, l.region AS region,
+           v.cycle_id AS cycle_id, v.lead_hours AS lead_hours,
+           v.valid_time AS valid_time
+    ORDER BY v.severity DESC LIMIT 500
   `,
 };
 

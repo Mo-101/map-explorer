@@ -9,6 +9,7 @@ export interface WhisperForecast {
   location_id: string;
   lat: number;
   lon: number;
+  region: string | null;
   cycle_id: string;
   lead_hours: number;
   valid_time: string;
@@ -36,22 +37,28 @@ export interface WhisperRollout {
   location_id: string;
   lat: number;
   lon: number;
+  region: string | null;
   series: WhisperRolloutPoint[];
 }
 
-export interface WhisperAnomaly {
+/** Shared :ViolationFlag node raised by the Whisper subgraph (source='whisper'). */
+export interface WhisperViolationFlag {
   id: string;
   kind: "low_pressure" | "heavy_precip" | "high_wind" | string;
   severity: number;
-  threshold: number;
+  status: "open" | "acknowledged" | "closed" | string;
   triggered_at: string;
   location_id: string;
   lat: number;
   lon: number;
+  region: string | null;
   cycle_id?: string;
   lead_hours?: number;
   valid_time?: string;
 }
+
+/** @deprecated Use WhisperViolationFlag — flags are shared, not Whisper-scoped. */
+export type WhisperAnomaly = WhisperViolationFlag;
 
 interface WhisperResponse<T> {
   degraded: boolean;
@@ -102,15 +109,17 @@ export const whisperService = {
     });
   },
 
-  /** Anomaly scan across the graph. */
+  /** Shared :ViolationFlag scan filtered to source='whisper'. */
   anomalies(opts?: {
     kind?: string;
+    status?: string;
     since?: string; // ISO datetime
     bbox?: [number, number, number, number]; // [lat_min, lat_max, lon_min, lon_max]
   }) {
     const [lat_min, lat_max, lon_min, lon_max] = opts?.bbox ?? [null, null, null, null] as any;
-    return call<WhisperAnomaly>("anomalies", {
+    return call<WhisperViolationFlag>("anomalies", {
       kind: opts?.kind ?? null,
+      status: opts?.status ?? "open",
       since: opts?.since ?? null,
       lat_min, lat_max, lon_min, lon_max,
     });
