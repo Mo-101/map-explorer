@@ -212,7 +212,16 @@ const Index = () => {
       />
 
       <GdacsRiskSummary />
-      <WeatherCard />
+      <WeatherCard
+        terrainEnabled={terrainEnabled}
+        onToggleTerrain={toggleTerrain}
+        imergEnabled={imergEnabled}
+        onToggleIMERG={() => setImergEnabled(v => !v)}
+        imergMode={imergMode}
+        onChangeIMERGMode={setImergMode}
+        copernicusFloodEnabled={copernicusFloodEnabled}
+        onToggleCopernicusFlood={() => setCopernicusFloodEnabled(v => !v)}
+      />
 
       <MapLegend
         threatCount={allThreats.length}
