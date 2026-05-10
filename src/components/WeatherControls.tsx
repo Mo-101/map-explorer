@@ -1,14 +1,14 @@
-import { Play, Pause } from "lucide-react";
+import { Play, Pause, Wind, Navigation, CloudRain, Gauge, Radar, Thermometer } from "lucide-react";
 import type { WeatherLayerType } from "@/hooks/useWeatherLayers";
 import MoScriptsTooltip from "@/components/MoScriptsTooltip";
 
-const LAYER_OPTIONS: { id: WeatherLayerType; label: string; tip: string }[] = [
-  { id: "wind", label: "Wind", tip: "GFS wind speed and direction overlay." },
-  { id: "wind-arrows", label: "Wind Arrows", tip: "Directional wind vectors showing atmospheric flow." },
-  { id: "precipitation", label: "Precipitation", tip: "GFS precipitation forecast layer." },
-  { id: "pressure", label: "Pressure", tip: "Mean sea level pressure contours." },
-  { id: "radar", label: "Radar", tip: "Near-real-time radar reflectivity." },
-  { id: "temperature", label: "Temperature", tip: "Surface temperature analysis." },
+const LAYER_OPTIONS: { id: WeatherLayerType; label: string; short: string; tip: string; Icon: typeof Wind }[] = [
+  { id: "wind", label: "Wind", short: "Wind", tip: "GFS wind speed and direction overlay.", Icon: Wind },
+  { id: "wind-arrows", label: "Wind Arrows", short: "Arrows", tip: "Directional wind vectors showing atmospheric flow.", Icon: Navigation },
+  { id: "precipitation", label: "Precipitation", short: "Precip", tip: "GFS precipitation forecast layer.", Icon: CloudRain },
+  { id: "pressure", label: "Pressure", short: "Pres", tip: "Mean sea level pressure contours.", Icon: Gauge },
+  { id: "radar", label: "Radar", short: "Radar", tip: "Near-real-time radar reflectivity.", Icon: Radar },
+  { id: "temperature", label: "Temperature", short: "Temp", tip: "Surface temperature analysis.", Icon: Thermometer },
 ];
 
 interface WeatherControlsProps {
@@ -48,26 +48,32 @@ const WeatherControls = ({
   return (
     <>
       {/* Top-center: horizontal weather layer nav, between MapView badge and BackendStatus badge */}
-      <div className="absolute top-5 left-1/2 -translate-x-1/2 z-10">
+      <div className="absolute top-5 left-1/2 -translate-x-1/2 z-10 max-w-[calc(100vw-440px)]">
         <div className="neu-panel-elevated overflow-hidden">
           <div className="neu-glow-line" />
-          <div className="flex items-center gap-1 px-2 py-1.5">
-            {LAYER_OPTIONS.map((opt) => (
-              <MoScriptsTooltip key={opt.id} title={opt.label} description={opt.tip} position="bottom">
-                <button
-                  onClick={() => onChangeLayer(opt.id)}
-                  className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-200 ${
-                    activeLayer === opt.id
-                      ? "neu-btn-active text-primary"
-                      : "neu-btn text-foreground/80 hover:text-foreground"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              </MoScriptsTooltip>
-            ))}
+          <div className="flex items-center gap-1 px-2 py-1.5 overflow-x-auto no-scrollbar">
+            {LAYER_OPTIONS.map((opt) => {
+              const Icon = opt.Icon;
+              const active = activeLayer === opt.id;
+              return (
+                <MoScriptsTooltip key={opt.id} title={opt.label} description={opt.tip} position="bottom">
+                  <button
+                    onClick={() => onChangeLayer(opt.id)}
+                    aria-pressed={active}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-200 shrink-0 ${
+                      active
+                        ? "neu-btn-active text-primary"
+                        : "neu-btn text-foreground/80 hover:text-foreground"
+                    }`}
+                  >
+                    <Icon size={12} className={active ? "text-primary" : "opacity-80"} />
+                    <span>{opt.short}</span>
+                  </button>
+                </MoScriptsTooltip>
+              );
+            })}
             {pointerValue && (
-              <span className="ml-2 px-2 text-[11px] font-bold text-foreground/90 border-l border-border">
+              <span className="ml-2 px-2 text-[11px] font-bold text-foreground/90 border-l border-border shrink-0">
                 {pointerValue}
               </span>
             )}

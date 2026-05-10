@@ -107,7 +107,7 @@ const MapLegend = ({
   const activeThreats = THREAT_TYPES.filter(() => threatCount > 0);
 
   return (
-    <div className="absolute bottom-14 left-5 z-20 w-[200px]">
+    <div className="absolute bottom-14 right-5 z-20 w-[200px]">
       <div className="neu-panel overflow-hidden">
         <button
           onClick={() => setExpanded((v) => !v)}
