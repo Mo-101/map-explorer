@@ -1,8 +1,7 @@
-"""Redis-driven worker entrypoint for The Phantom."""
+"""Redis-driven worker entrypoint."""
 from __future__ import annotations
 import json
 import logging
-import os
 import signal
 import sys
 import time
@@ -10,10 +9,10 @@ import time
 import redis
 
 from config import REDIS_URL, JOB_QUEUE, GRAPHCAST_MODEL_PATH, GRAPHCAST_STATS_PATH
-from engine.inference import GraphCastRunner, RolloutSpec
-from engine.data_adapter import load_gfs_state, normalize
-from engine.persist import write_forecast
-from engine.reflex import scan_cycle
+from engine import GraphCastRunner, RolloutSpec
+from adapter import load_gfs_state, normalize
+from bridge import write_forecast
+from reflex import scan_cycle
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,10 +30,11 @@ def _stop(_sig, _frame):
 
 
 def handle_job(runner: GraphCastRunner, payload: dict) -> None:
-    cycle_id = payload["cycle_id"]
-    base_time = payload["base_time"]
+    cycle_id   = payload["cycle_id"]
+    base_time  = payload["base_time"]
     lead_hours = payload.get("lead_hours", [6, 12, 24, 48, 72, 120, 168, 240])
     grib_paths = payload.get("grib_paths", [])
+    source     = payload.get("source", "gfs")
 
     log.info("Job %s | base=%s | leads=%s", cycle_id, base_time, lead_hours)
     t0 = time.time()
@@ -43,8 +43,8 @@ def handle_job(runner: GraphCastRunner, payload: dict) -> None:
     state = normalize(state, GRAPHCAST_STATS_PATH)
     forecast = runner.rollout(state, RolloutSpec(cycle_id, base_time, lead_hours))
 
-    write_forecast(forecast, cycle_id, base_time, lead_hours)
-    scan_cycle(cycle_id)
+    write_forecast(forecast, cycle_id, base_time, lead_hours, source=source)
+    scan_cycle(cycle_id)  # reflex pass; APOC trigger already covers live writes
 
     log.info("Job %s done in %.1fs", cycle_id, time.time() - t0)
 
