@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type * as maptilersdk from '@maptiler/sdk';
+import { fnUrl, authHeaders } from '@/services/apiBase';
 
 interface PrecipPoint {
   lat: number;
