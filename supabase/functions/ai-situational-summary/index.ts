@@ -5,6 +5,27 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function buildFallbackSummary(threats: any[]): string {
+  if (!Array.isArray(threats) || threats.length === 0) {
+    return "No active hazard signals to summarize.";
+  }
+
+  const counts = threats.reduce((acc: Record<string, number>, t: any) => {
+    const severity = String(t?.severity || "unknown").toLowerCase();
+    acc[severity] = (acc[severity] || 0) + 1;
+    return acc;
+  }, {});
+
+  const topRegions = threats
+    .slice(0, 5)
+    .map((t: any) => String(t?.title || t?.location || t?.threat_type || t?.type || "regional signal"))
+    .join("; ");
+
+  const extreme = counts.extreme || 0;
+  const high = counts.high || 0;
+  return `${threats.length} active hazard signals are being monitored across Africa, including ${extreme} extreme and ${high} high-severity signals. Priority observations: ${topRegions}. Maintain situational awareness while automated AI briefing is temporarily unavailable.`;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -15,8 +36,8 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
       return new Response(
-        JSON.stringify({ error: "LOVABLE_API_KEY not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ summary: buildFallbackSummary(threats), degraded: true, reason: "AI unavailable" }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -63,21 +84,21 @@ serve(async (req) => {
       const status = response.status;
       if (status === 429) {
         return new Response(
-          JSON.stringify({ error: "Rate limited", summary: null }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ summary: buildFallbackSummary(threats), degraded: true, reason: "AI rate limited" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       if (status === 402) {
         return new Response(
-          JSON.stringify({ error: "Payment required", summary: null }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ summary: buildFallbackSummary(threats), degraded: true, reason: "AI credits unavailable" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       const errText = await response.text();
       console.error("AI gateway error:", status, errText);
       return new Response(
-        JSON.stringify({ error: "AI gateway error", summary: null }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ summary: buildFallbackSummary(threats), degraded: true, reason: "AI gateway error" }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -91,8 +112,8 @@ serve(async (req) => {
   } catch (e: any) {
     console.error("ai-situational-summary error:", e);
     return new Response(
-      JSON.stringify({ error: e?.message || String(e), summary: null }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ summary: "Situational summary temporarily unavailable. Core hazard monitoring remains active.", degraded: true, reason: "Summary generation error" }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
