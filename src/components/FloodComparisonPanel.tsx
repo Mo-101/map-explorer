@@ -96,7 +96,7 @@ const FloodComparisonPanel = ({ allThreats, copernicusGeoJson, copernicusVisible
   const tabs: { id: TabId; label: string }[] = [{ id: "overview", label: "Overview" }, { id: "damage", label: "Damage" }, { id: "alerts", label: "Alerts" }, { id: "aois", label: "AOIs" }];
 
   return (
-    <div className="absolute top-36 left-5 z-20 w-[300px]">
+    <div className="absolute top-40 left-5 z-20 w-[300px]">
       <div className="neu-panel">
         <div className="neu-glow-line" />
         <button onClick={() => setExpanded((v) => !v)} className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-white/5 transition-colors">

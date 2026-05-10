@@ -69,7 +69,7 @@ const GdacsRiskSummary = () => {
   const totalAlerts = data.reduce((s, d) => s + d.total, 0);
 
   return (
-    <div className="absolute bottom-28 left-4 z-20">
+    <div className="absolute bottom-14 left-5 z-20">
       <div className="neu-panel max-w-[280px]">
         <div className="neu-glow-line" />
 
