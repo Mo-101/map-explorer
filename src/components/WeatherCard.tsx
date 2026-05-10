@@ -25,7 +25,27 @@ function classify(id: number, icon: string): Condition {
 
 const API_KEY = import.meta.env.VITE_OPENWEATHER_API as string | undefined;
 
-export default function WeatherCard() {
+interface WeatherCardProps {
+  terrainEnabled?: boolean;
+  onToggleTerrain?: () => void;
+  imergEnabled?: boolean;
+  onToggleIMERG?: () => void;
+  imergMode?: '24h' | '72h';
+  onChangeIMERGMode?: (m: '24h' | '72h') => void;
+  copernicusFloodEnabled?: boolean;
+  onToggleCopernicusFlood?: () => void;
+}
+
+export default function WeatherCard({
+  terrainEnabled,
+  onToggleTerrain,
+  imergEnabled,
+  onToggleIMERG,
+  imergMode,
+  onChangeIMERGMode,
+  copernicusFloodEnabled,
+  onToggleCopernicusFlood,
+}: WeatherCardProps = {}) {
   const [data, setData] = useState<WeatherData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
