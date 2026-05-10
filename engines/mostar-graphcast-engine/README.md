@@ -1,84 +1,89 @@
-# mostar-graphcast-engine — The Phantom (Whisper Engine)
+# mostar-graphcast-engine — Whisper Engine
 
-Sovereign GraphCast inference microservice that persists forecasts into an
-isolated Neo4j subgraph ("Whisper Graph") for the Mo Weather intelligence
-layer. Coverage: Africa regional grid at GraphCast's native 0.25° resolution.
+GraphCast inference worker that writes the **Whisper subgraph** into the
+shared Grid Neo4j instance (same `bolt://` connection as Grid Core and the
+Phantom subgraph). Logical isolation is via the `W_` label prefix.
 
-This service runs **outside** the Lovable Vite/React project. Lovable cannot
-execute Python or JAX. Treat this directory as deployable source code: build
-the Docker image, push it to your runtime of choice (Cloud Run, GCE VM with
-GPU, or on-prem worker), and point it at Redis + Neo4j.
-
-## Architecture
+## Subgraph contract
 
 ```
-   GFS GRIB ──► data_adapter ──► xarray ──► inference (GraphCast)
-                                              │
-                                              ▼
-                                          persist ──► Neo4j (Whisper Graph)
-                                              │
-                                              ▼
-                                           reflex ──► :Anomaly nodes
+Grid Neo4j instance
+│
+├── Grid Core               (:GridTag) (:MoScriptRevision) (:UsageTrace)
+│                           (:Agent) (:SovereignCoreLedger)
+│                           (:ViolationFlag)   ← SHARED
+│
+├── Phantom subgraph        (:POE_*)
+│
+└── Whisper subgraph        (:W_Location) (:W_ForecastCycle) (:W_ForecastNode)
+                            raises (:ViolationFlag) with source='whisper'
 ```
 
-The worker consumes job payloads from a Redis list (`whisper:jobs`) emitted by
-the existing Supabase `ingest-gfs` pipeline (or any other scheduler).
+Every `:W_ForecastCycle` is anchored to `:SovereignCoreLedger { id: 'core' }`
+via `[:ANCHORED_TO]` on write, mirroring GridTag registration.
 
-## Layout
+## Files
 
 | Path | Purpose |
 |------|---------|
-| `engine/worker.py` | Redis BLPOP loop, dispatches jobs |
-| `engine/data_adapter.py` | GFS GRIB → xarray with derived features (year_progress sin/cos, etc.) |
-| `engine/inference.py` | GraphCast model load + autoregressive rollout |
-| `engine/grid.py` | Africa bbox slicing, deterministic location IDs |
-| `engine/persist.py` | Batched UNWIND writer + per-location NEXT chain |
-| `engine/reflex.py` | Post-write anomaly verification (defence-in-depth vs APOC trigger) |
-| `seed/seed_locations.py` | One-shot: schema + 96k `:WeatherLocation` nodes + APOC trigger |
-| `config.py` | Env-driven config |
-| `Dockerfile` | python:3.10 + JAX CPU (swap to CUDA for GPU runtimes) |
+| `engine.py` | GraphCast model load + autoregressive rollout |
+| `adapter.py` | GFS GRIB → xarray + time progress features |
+| `bridge.py` | xarray → :W_ForecastNode + cycle anchoring + NEXT chain |
+| `reflex.py` | Fallback anomaly scan → shared :ViolationFlag |
+| `worker.py` | Redis queue consumer (`whisper:jobs`) |
+| `grid.py` | Africa 0.25° grid indexing + region tagging |
+| `seed_locations.py` | One-shot: schema + ~96k :W_Location + APOC trigger |
+| `schema/whisper_schema.cypher` | Constraints + indexes |
+| `schema/apoc_trigger.cypher` | stormscribe reflex trigger |
+| `schema/seed_locations.cypher` | MERGE template (run by seed script) |
 
-## Whisper Graph schema (isolated subgraph)
+## Coverage
 
-Labels: `:WeatherLocation`, `:ForecastCycle`, `:ForecastNode`, `:Anomaly`,
-`:Variable`. No shared labels with the hazard graph.
-
-See `seed/seed_locations.py` for the authoritative schema (constraints,
-indexes, APOC trigger).
+Full Africa 0.25° grid: lat `[-40, 40]`, lon `[-20, 55]` → **~96,000 `:W_Location` nodes**, seeded once.
 
 ## Environment
 
 ```
-NEO4J_URI=bolt://...
+NEO4J_URI=bolt://localhost:7687   # same instance as Grid + Phantom
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=...
-REDIS_URL=redis://...
+NEO4J_DATABASE=neo4j
+REDIS_URL=redis://localhost:6379
+WHISPER_QUEUE=whisper:jobs
 GRAPHCAST_MODEL_PATH=/models/graphcast/params
 GRAPHCAST_STATS_PATH=/models/graphcast/stats
-BBOX_LAT_MIN=-40
-BBOX_LAT_MAX=40
-BBOX_LON_MIN=-20
-BBOX_LON_MAX=55
-GRID_RES=0.25
 ```
 
 ## First-time setup
 
 ```bash
 pip install -r requirements.txt
-python -m seed.seed_locations         # creates schema + 96k locations
-python -m engine.worker               # starts the consumer
+python seed_locations.py     # schema + 96k locations + APOC trigger
+python worker.py             # consumer
 ```
 
-## Job payload contract
+## Job payload
 
 ```json
-{
-  "cycle_id": "gc_2026051000",
-  "base_time": "2026-05-10T00:00:00Z",
-  "source": "gfs",
-  "lead_hours": [6, 12, 24, 48, 72, 120, 168, 240]
-}
+{ "cycle_id":   "gc_2026051000",
+  "base_time":  "2026-05-10T00:00:00Z",
+  "source":     "gfs",
+  "lead_hours": [6, 12, 24, 48, 72, 120, 168, 240],
+  "grib_paths": ["/data/gfs.t00z.pgrb2.0p25.f000",
+                 "/data/gfs.t00z.pgrb2.0p25.f006"] }
 ```
 
-Push to Redis: `LPUSH whisper:jobs '<json>'`.
+Push with `LPUSH whisper:jobs '<json>'`.
+
+## Consumer side — mo-weather-stormscribe-003
+
+The agent polls shared `:ViolationFlag` nodes filtered by `source = 'whisper'`:
+
+```cypher
+MATCH (v:ViolationFlag { source: 'whisper', status: 'open' })-[:AT]->(l:W_Location)
+WHERE v.severity > 0.5
+RETURN v, l
+ORDER BY v.severity DESC
+```
+
+…then calls `trigger_moscript_ritual('ms-flood-omen-002' | 'ms-weather-watch-001', v.id)`.
