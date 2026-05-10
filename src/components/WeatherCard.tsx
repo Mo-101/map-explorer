@@ -132,6 +132,60 @@ export default function WeatherCard({
                 <span>{Math.round(data.main.feels_like)}°</span>
               </div>
             </div>
+
+            {/* Map filters relocated here to declutter the map UI */}
+            {(onToggleTerrain || onToggleIMERG || onToggleCopernicusFlood) && (
+              <div className="border-t border-white/15 pt-2 mt-2 space-y-1.5">
+                <div className="text-[10px] uppercase tracking-wider opacity-70">Map Filters</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {onToggleTerrain && (
+                    <button
+                      onClick={onToggleTerrain}
+                      className={`px-2 py-1 rounded-md text-[10px] font-medium flex items-center gap-1 transition-all ${
+                        terrainEnabled ? "bg-white/25 text-white" : "bg-white/10 text-white/80 hover:bg-white/20"
+                      }`}
+                    >
+                      <Mountain className="w-3 h-3" /> Terrain
+                    </button>
+                  )}
+                  {onToggleIMERG && (
+                    <button
+                      onClick={onToggleIMERG}
+                      className={`px-2 py-1 rounded-md text-[10px] font-medium flex items-center gap-1 transition-all ${
+                        imergEnabled ? "bg-white/25 text-white" : "bg-white/10 text-white/80 hover:bg-white/20"
+                      }`}
+                    >
+                      <CloudRain className="w-3 h-3" /> IMERG
+                    </button>
+                  )}
+                  {onToggleCopernicusFlood && (
+                    <button
+                      onClick={onToggleCopernicusFlood}
+                      className={`px-2 py-1 rounded-md text-[10px] font-medium flex items-center gap-1 transition-all ${
+                        copernicusFloodEnabled ? "bg-white/25 text-white" : "bg-white/10 text-white/80 hover:bg-white/20"
+                      }`}
+                    >
+                      <Droplets className="w-3 h-3" /> EMS Flood
+                    </button>
+                  )}
+                </div>
+                {imergEnabled && onChangeIMERGMode && (
+                  <div className="flex gap-1 pt-1">
+                    {(['24h', '72h'] as const).map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => onChangeIMERGMode(m)}
+                        className={`flex-1 px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
+                          imergMode === m ? "bg-white/30 text-white" : "bg-white/10 text-white/70 hover:bg-white/20"
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
         {data && collapsed && (
