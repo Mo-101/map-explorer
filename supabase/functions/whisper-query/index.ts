@@ -148,7 +148,7 @@ Deno.serve(async (req) => {
   const NEO4J_PASSWORD = Deno.env.get("NEO4J_PASSWORD");
   const NEO4J_DATABASE = Deno.env.get("NEO4J_DATABASE") ?? "neo4j";
 
-  if (!NEO4J_URI || !NEO4J_USER || !NEO4J_PASSWORD) {
+  if (!NEO4J_URI) {
     return degraded("Whisper Graph not configured yet");
   }
 
