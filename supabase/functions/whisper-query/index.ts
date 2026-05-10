@@ -6,7 +6,12 @@
 // Degrades gracefully: when NEO4J_* secrets are absent, returns
 // { degraded: true, reason: ... } with HTTP 200 so the UI never blanks.
 
-import { corsHeaders } from "@supabase/supabase-js/cors";
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
 
 type QueryKind = "point" | "rollout" | "anomalies";
 
