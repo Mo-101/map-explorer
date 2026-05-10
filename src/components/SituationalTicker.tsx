@@ -163,7 +163,7 @@ const severityDot: Record<string, string> = {
 let cachedSummary: { text: string; ts: number } | null = null;
 const AI_CACHE_MS = 5 * 60 * 1000;
 
-import { fnUrl, authHeaders } from "@/services/apiBase";
+
 
 async function fetchAISummary(threats: any[]): Promise<string | null> {
   if (cachedSummary && Date.now() - cachedSummary.ts < AI_CACHE_MS) return cachedSummary.text;
