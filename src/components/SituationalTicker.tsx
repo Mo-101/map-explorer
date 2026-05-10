@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type * as maptilersdk from '@maptiler/sdk';
 import { fetchRealtimeThreats } from '@/services/hazardsApi';
+import { fnUrl, authHeaders } from '@/services/apiBase';
 import { useToast } from '@/hooks/use-toast';
 
 interface TickerItem {
