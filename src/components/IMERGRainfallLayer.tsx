@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type * as maptilersdk from '@maptiler/sdk';
+import { fnUrl, authHeaders } from '@/services/apiBase';
 
 interface PrecipPoint {
   lat: number;
@@ -34,9 +35,7 @@ function precipRadius(mm: number): number {
   return 55;
 }
 
-const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID || "tciktazfwokzbxnutpvh";
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || `https://${PROJECT_ID}.supabase.co`;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
+
 
 const IMERGRainfallLayer = ({ map, visible, mode }: IMERGRainfallLayerProps) => {
   const [data, setData] = useState<PrecipPoint[]>([]);
@@ -47,13 +46,9 @@ const IMERGRainfallLayer = ({ map, visible, mode }: IMERGRainfallLayerProps) => 
   const fetchData = useCallback(async () => {
     if (fetchedRef.current) return;
     try {
-      const resp = await fetch(`${SUPABASE_URL}/functions/v1/ingest-gpm`, {
+      const resp = await fetch(fnUrl("ingest-gpm"), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SUPABASE_KEY,
-          'Authorization': `Bearer ${SUPABASE_KEY}`,
-        },
+        headers: authHeaders(),
       });
       if (!resp.ok) return;
       const result = await resp.json();

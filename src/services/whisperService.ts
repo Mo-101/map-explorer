@@ -2,8 +2,8 @@
 // Typed client for The Phantom's Whisper Graph (read-only).
 // Matches the three stormscribe-003 query patterns: point, rollout, anomalies.
 
-const FN_URL = `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/whisper-query`;
-const ANON = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+import { fnUrl, authHeaders } from "./apiBase";
+const FN_URL = fnUrl("whisper-query");
 
 export interface WhisperForecast {
   location_id: string;
@@ -70,11 +70,7 @@ async function call<T>(kind: string, params: Record<string, unknown>): Promise<W
   try {
     const res = await fetch(FN_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${ANON}`,
-        apikey: ANON,
-      },
+      headers: authHeaders(),
       body: JSON.stringify({ kind, params }),
     });
     if (!res.ok) {
