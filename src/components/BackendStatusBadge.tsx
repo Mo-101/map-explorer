@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchSmokeTest } from "@/services/hazardsApi";
+import { pingApi, type ApiHealth } from "@/services/apiBase";
 import MoScriptsTooltip from "@/components/MoScriptsTooltip";
 
 type SmokeData = {
@@ -13,19 +14,33 @@ type SmokeData = {
   checked_at?: string;
 };
 
+type Status = "ok" | "db_down" | "api_unreachable";
+
 export default function BackendStatusBadge() {
   const [data, setData] = useState<SmokeData | null>(null);
+  const [api, setApi] = useState<ApiHealth | null>(null);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     const check = async () => {
+      const health = await pingApi();
+      if (cancelled) return;
+      setApi(health);
+
+      if (!health.reachable) {
+        setData({ database: "unreachable", error: health.error ?? "API unreachable" });
+        return;
+      }
       try {
         const result = await fetchSmokeTest();
         if (!cancelled) setData(result);
-      } catch {
-        if (!cancelled) setData({ database: "error", error: "unreachable" });
+      } catch (e) {
+        if (!cancelled) {
+          const msg = e instanceof Error ? e.message : "unknown error";
+          setData({ database: "error", error: msg });
+        }
       }
     };
 
@@ -34,48 +49,70 @@ export default function BackendStatusBadge() {
     return () => { cancelled = true; window.clearInterval(id); };
   }, []);
 
-  const ok = data?.database === "connected";
-  const label = ok ? "NEON DB OK" : "NEON DB DOWN";
-  const sourceCount = data?.by_source ? Object.keys(data.by_source).length : 0;
+  const status: Status = !api?.reachable
+    ? "api_unreachable"
+    : data?.database === "connected"
+      ? "ok"
+      : "db_down";
+
+  const label =
+    status === "ok" ? "NEON DB OK" :
+    status === "db_down" ? "NEON DB DOWN" :
+    "API UNREACHABLE";
+
+  const accent =
+    status === "ok"
+      ? "linear-gradient(90deg, transparent 5%, hsla(142, 71%, 45%, 0.5) 50%, transparent 95%)"
+      : status === "db_down"
+        ? "linear-gradient(90deg, transparent 5%, hsla(38, 92%, 55%, 0.5) 50%, transparent 95%)"
+        : "linear-gradient(90deg, transparent 5%, hsla(0, 70%, 55%, 0.5) 50%, transparent 95%)";
+
+  const textColor =
+    status === "ok" ? "text-emerald-300" :
+    status === "db_down" ? "text-amber-300" :
+    "text-red-300";
+
+  const tooltipDesc =
+    status === "ok"
+      ? `Database connected. ${data?.active_threats ?? 0} active threats across ${data?.by_source ? Object.keys(data.by_source).length : 0} data sources. Auto-refreshes every 60s.`
+      : status === "db_down"
+        ? "API is reachable but the database is not responding. Live threat data may be stale."
+        : `Backend API is unreachable (${api?.error ?? "no response"}). The Fastify service may be offline or DNS is misconfigured.`;
 
   return (
     <div className="absolute top-5 right-5 z-20">
       <MoScriptsTooltip
         title="Backend Health Monitor"
-        description={ok
-          ? `Database connected. ${data?.active_threats ?? 0} active threats across ${sourceCount} data sources. Auto-refreshes every 60s.`
-          : "Backend connection lost. Threat data may be stale. System will retry automatically."
-        }
+        description={tooltipDesc}
         position="left"
       >
         <div
           className="neu-panel-elevated overflow-hidden cursor-pointer transition-all"
           onClick={() => setExpanded(v => !v)}
         >
-          {/* Status glow line */}
-          <div
-            className="h-[1px] w-full"
-            style={{
-              background: ok
-                ? "linear-gradient(90deg, transparent 5%, hsla(142, 71%, 45%, 0.5) 50%, transparent 95%)"
-                : "linear-gradient(90deg, transparent 5%, hsla(0, 70%, 55%, 0.5) 50%, transparent 95%)"
-            }}
-          />
+          <div className="h-[1px] w-full" style={{ background: accent }} />
 
           <div className="px-3 py-2 text-xs font-mono">
             <div className="flex items-center justify-between gap-3">
-              <span className={`font-semibold ${ok ? "text-emerald-300" : "text-red-300"}`}>{label}</span>
-              {ok && data?.active_threats !== undefined && (
+              <span className={`font-semibold ${textColor}`}>{label}</span>
+              {status === "ok" && data?.active_threats !== undefined && (
                 <span className="text-foreground/70">{data.active_threats} active</span>
               )}
-              <span className="text-muted-foreground/60">{data?.checked_at ? new Date(data.checked_at).toLocaleTimeString() : "..."}</span>
+              {status === "api_unreachable" && api?.latencyMs && (
+                <span className="text-foreground/50">{api.latencyMs}ms</span>
+              )}
+              <span className="text-muted-foreground/60">
+                {data?.checked_at ? new Date(data.checked_at).toLocaleTimeString() : "..."}
+              </span>
             </div>
 
-            {!ok && data?.error && (
-              <div className="text-red-300/80 mt-1">{data.error}</div>
+            {status !== "ok" && (data?.error || api?.error) && (
+              <div className="text-red-300/80 mt-1 truncate max-w-[280px]">
+                {data?.error || api?.error}
+              </div>
             )}
 
-            {expanded && ok && data?.by_source && (
+            {expanded && status === "ok" && data?.by_source && (
               <div className="mt-2 pt-2 border-t border-border/30 space-y-1">
                 {Object.entries(data.by_source).map(([src, info]) => (
                   <div key={src} className="flex justify-between gap-4">
@@ -92,6 +129,14 @@ export default function BackendStatusBadge() {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {expanded && status === "api_unreachable" && (
+              <div className="mt-2 pt-2 border-t border-border/30 text-muted-foreground/70 space-y-0.5">
+                <div>Service expected at the Fastify host.</div>
+                <div>Check: docker compose up -d on the VPS.</div>
+                <div>DNS: api.mostarindustries.com → VPS IP.</div>
               </div>
             )}
           </div>
