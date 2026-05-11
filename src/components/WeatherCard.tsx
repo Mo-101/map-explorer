@@ -53,9 +53,15 @@ export default function WeatherCard({
 
   useEffect(() => {
     let cancelled = false;
+    let resolved = false;
     async function load(lat: number, lon: number) {
+      if (resolved) return;
+      resolved = true;
       try {
-        if (!API_KEY) throw new Error("Missing OpenWeather API key");
+        if (!API_KEY) {
+          console.warn("[WeatherCard] VITE_OPENWEATHER_API is not defined at build time");
+          throw new Error("Missing OpenWeather API key");
+        }
         const res = await fetch(
           `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&appid=${API_KEY}`
         );
@@ -66,13 +72,15 @@ export default function WeatherCard({
         if (!cancelled) { setError(e.message ?? "Failed"); setLoading(false); }
       }
     }
-    if (!navigator.geolocation) { load(-1.2921, 36.8219); return; } // Nairobi fallback
+    // Hard fallback in case geolocation hangs (common in cross-origin iframes)
+    const fallbackTimer = window.setTimeout(() => load(-1.2921, 36.8219), 2500);
+    if (!navigator.geolocation) { load(-1.2921, 36.8219); return; }
     navigator.geolocation.getCurrentPosition(
-      (pos) => load(pos.coords.latitude, pos.coords.longitude),
-      () => load(-1.2921, 36.8219),
-      { timeout: 6000 }
+      (pos) => { window.clearTimeout(fallbackTimer); load(pos.coords.latitude, pos.coords.longitude); },
+      () => { window.clearTimeout(fallbackTimer); load(-1.2921, 36.8219); },
+      { timeout: 4000, maximumAge: 600000 }
     );
-    return () => { cancelled = true; };
+    return () => { cancelled = true; window.clearTimeout(fallbackTimer); };
   }, []);
 
   const condition: Condition = data ? classify(data.weather[0].id, data.weather[0].icon) : "cloudy";
