@@ -9,7 +9,11 @@ const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID || "tciktazfwokzbxnu
 const FALLBACK_SUPABASE =
   import.meta.env.VITE_SUPABASE_URL || `https://${PROJECT_ID}.supabase.co`;
 
-const RAW_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || "";
+// Default to the production Fastify host on the VPS. Override at build time via
+// VITE_API_BASE_URL (e.g. http://localhost:8080 for local dev).
+const DEFAULT_API_BASE = "https://api.mostarindustries.com";
+const RAW_BASE =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || DEFAULT_API_BASE;
 
 function pickBase(): string {
   if (!RAW_BASE) return FALLBACK_SUPABASE;
