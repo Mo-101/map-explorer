@@ -58,3 +58,46 @@ export function authHeaders(extra: Record<string, string> = {}): Record<string, 
   }
   return h;
 }
+
+export type ApiHealth = {
+  reachable: boolean;
+  service?: string;
+  time?: string;
+  routes?: string[];
+  latencyMs?: number;
+  error?: string;
+};
+
+/**
+ * Ping the Fastify service `/health` endpoint. Returns a structured result
+ * so the UI can distinguish "API unreachable" from "DB down" cleanly.
+ * Supabase fallback has no `/health` route, so we treat it as reachable if
+ * the origin responds at all.
+ */
+export async function pingApi(timeoutMs = 4000): Promise<ApiHealth> {
+  if (USING_SUPABASE) {
+    return { reachable: true, service: "supabase-fallback" };
+  }
+  const url = `${API_BASE_URL.replace(/\/$/, "")}/health`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  const started = performance.now();
+  try {
+    const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: "application/json" } });
+    const latencyMs = Math.round(performance.now() - started);
+    if (!res.ok) return { reachable: false, latencyMs, error: `HTTP ${res.status}` };
+    const body = (await res.json()) as Partial<ApiHealth> & { ok?: boolean };
+    return {
+      reachable: body.ok !== false,
+      service: body.service,
+      time: body.time,
+      routes: body.routes,
+      latencyMs,
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { reachable: false, error: msg.includes("abort") ? "timeout" : msg };
+  } finally {
+    clearTimeout(t);
+  }
+}
