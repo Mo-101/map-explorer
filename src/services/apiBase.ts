@@ -1,15 +1,41 @@
 // Central API base resolution.
-// Prefer the self-hosted Node/Fastify service via VITE_API_BASE_URL (e.g.
-// https://api.mostarindustries.com). Falls back to the legacy Supabase Edge
-// Functions URL only if that env var is not set.
+// Prefer the self-hosted Node/Fastify service via VITE_API_BASE_URL
+// (e.g. https://api.mostarindustries.com). Falls back to the legacy
+// Supabase Edge Functions URL only if that env var is unset OR points to
+// localhost while the app is running on a remote origin (which can never
+// resolve from the user's browser).
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID || "tciktazfwokzbxnutpvh";
 const FALLBACK_SUPABASE =
   import.meta.env.VITE_SUPABASE_URL || `https://${PROJECT_ID}.supabase.co`;
 
-export const API_BASE_URL: string =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) || FALLBACK_SUPABASE;
+const RAW_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || "";
 
+function pickBase(): string {
+  if (!RAW_BASE) return FALLBACK_SUPABASE;
+  try {
+    const u = new URL(RAW_BASE);
+    const isLocal = u.hostname === "localhost" || u.hostname === "127.0.0.1";
+    const browserIsLocal =
+      typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+    if (isLocal && !browserIsLocal) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[apiBase] VITE_API_BASE_URL is set to ${RAW_BASE} but the app is running on ${window.location.host}. ` +
+          `The browser cannot reach localhost from a remote origin. Falling back to ${FALLBACK_SUPABASE}. ` +
+          `Deploy the Fastify service and set VITE_API_BASE_URL to its public URL (e.g. https://api.mostarindustries.com).`
+      );
+      return FALLBACK_SUPABASE;
+    }
+    return RAW_BASE;
+  } catch {
+    console.warn(`[apiBase] Invalid VITE_API_BASE_URL: ${RAW_BASE}. Falling back to ${FALLBACK_SUPABASE}.`);
+    return FALLBACK_SUPABASE;
+  }
+}
+
+export const API_BASE_URL: string = pickBase();
 export const USING_SUPABASE = API_BASE_URL.includes("supabase.co");
 
 const SUPABASE_KEY =
