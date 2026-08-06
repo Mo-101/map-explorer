@@ -8,3 +8,30 @@ verify_jwt = false
 
 [functions.ingest-jtwc]
 verify_jwt = false
+
+[functions.neon-threats]
+verify_jwt = false
+
+[functions.neon-health]
+verify_jwt = false
+
+[functions.ai-situational-summary]
+verify_jwt = false
+
+[functions.ai-analyze]
+verify_jwt = false
+
+[functions.ingest-gdacs]
+verify_jwt = false
+
+[functions.ingest-reliefweb]
+verify_jwt = false
+
+[functions.smoke-test]
+verify_jwt = false
+
+[functions.ingest-usgs]
+verify_jwt = false
+
+[functions.ingest-who-don]
+verify_jwt = false

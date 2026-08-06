@@ -1,0 +1,24 @@
+{
+  "name": "mostar-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mostar hazard-monitoring API. Replaces Supabase edge functions. Talks to Neon Postgres + Neo4j directly.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4",
+    "fastify": "^5.2.1",
+    "@fastify/cors": "^10.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

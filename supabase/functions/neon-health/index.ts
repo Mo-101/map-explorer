@@ -53,6 +53,8 @@ serve(async (req) => {
     await sql`ALTER TABLE hazard_alerts ADD COLUMN IF NOT EXISTS data_source_run_id TEXT;`;
     await sql`ALTER TABLE hazard_alerts ADD COLUMN IF NOT EXISTS forecast_hour INTEGER;`;
     await sql`ALTER TABLE hazard_alerts ADD COLUMN IF NOT EXISTS source_artifact JSONB;`;
+    await sql`ALTER TABLE hazard_alerts ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ DEFAULT NOW();`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_hazard_alerts_last_seen ON hazard_alerts (source, is_active, last_seen_at DESC);`;
 
     // Seed if empty
     const [{ count }] = await sql`SELECT COUNT(*)::int AS count FROM hazard_alerts WHERE is_active = TRUE;`;
