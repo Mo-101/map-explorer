@@ -10,32 +10,20 @@ import {
   ParticleLayer,
 } from "@maptiler/weather";
 
-// Custom WindArrowLayer implementation using ParticleLayer
-class WindArrowLayer extends ParticleLayer {
-  constructor(options?: { opacity?: number }) {
-    super(
-      "wind-arrows",
-      null, // TileLayerOptions
-      {       // ParticleLayerOptions
-        decodeChannels: "rg",
-        decodeAsWaves: false,
-        decodeMin: 0,
-        decodeMax: 255,
-        maxAmount: 128,
-        color: [0, 0, 0, 30],
-        fastColor: [0, 0, 0, 100],
-        drawAsLines: true,
-        size: 1.5,
-        speed: 0.001,
-        density: 2,
-      },
-      null // ColoringFragments
-    );
-    
-    if (options?.opacity) {
-      (this as any).setOpacity(options.opacity);
-    }
-  }
+// Long, bright streak particles (readable "arrows" look) built on WindLayer,
+// which is the supported way to render wind particles in @maptiler/weather.
+function createWindStreakLayer(id: string) {
+  return new WindLayer({
+    id,
+    opacity: 1,
+    colorramp: ColorRamp.builtin.NULL,
+    speed: 0.0012,
+    fadeFactor: 0.02,
+    maxAmount: 512,
+    density: 120,
+    color: [255, 255, 255, 60],
+    fastColor: [255, 245, 200, 220],
+  });
 }
 
 export type WeatherLayerType =
