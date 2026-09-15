@@ -68,9 +68,8 @@ interface WhisperResponse<T> {
 
 async function call<T>(kind: string, params: Record<string, unknown>): Promise<WhisperResponse<T>> {
   try {
-    const res = await fetch(FN_URL, {
+    const res = await apiFetch("whisper-query", {
       method: "POST",
-      headers: authHeaders(),
       body: JSON.stringify({ kind, params }),
     });
     if (!res.ok) {

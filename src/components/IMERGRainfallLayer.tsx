@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type * as maptilersdk from '@maptiler/sdk';
-import { fnUrl, authHeaders } from '@/services/apiBase';
+import { apiFetch } from '@/services/apiBase';
 
 interface PrecipPoint {
   lat: number;
@@ -46,10 +46,7 @@ const IMERGRainfallLayer = ({ map, visible, mode }: IMERGRainfallLayerProps) => 
   const fetchData = useCallback(async () => {
     if (fetchedRef.current) return;
     try {
-      const resp = await fetch(fnUrl("ingest-gpm"), {
-        method: 'POST',
-        headers: authHeaders(),
-      });
+      const resp = await apiFetch("ingest-gpm", { method: 'POST' });
       if (!resp.ok) return;
       const result = await resp.json();
       if (result.precip_grid && Array.isArray(result.precip_grid)) {
