@@ -189,10 +189,7 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
         };
         break;
       case "wind-arrows":
-        // Create wind arrows using custom ParticleLayer implementation
-        weatherLayer = new WindArrowLayer({
-          opacity: 0.8,
-        });
+        weatherLayer = createWindStreakLayer("wind-arrows");
         break;
     }
 
