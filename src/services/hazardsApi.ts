@@ -1,9 +1,8 @@
-import { fnUrl, authHeaders } from "./apiBase";
+import { apiFetch } from "./apiBase";
 
 async function callEdgeFunction(fnName: string, options?: { method?: string; body?: any }) {
-  const resp = await fetch(fnUrl(fnName), {
+  const resp = await apiFetch(fnName, {
     method: options?.method || "GET",
-    headers: authHeaders(),
     ...(options?.body ? { body: JSON.stringify(options.body) } : {}),
   });
   if (!resp.ok) throw new Error(`Edge function ${fnName} returned ${resp.status}`);
@@ -12,10 +11,11 @@ async function callEdgeFunction(fnName: string, options?: { method?: string; bod
 
 export async function fetchRealtimeThreats() {
   try {
-    return await callEdgeFunction("neon-threats");
+    const data = await callEdgeFunction("neon-threats");
+    return { ...data, live: true };
   } catch (e) {
     console.warn("⚠️ Threats fetch failed:", e);
-    return { threats: [] };
+    return { threats: [], clusters: [], live: false, error: String(e) };
   }
 }
 
