@@ -4,14 +4,14 @@ import { corsHeaders } from "../_shared/cors.js";
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  const dbUrl = process.env.NEON_DATABASE_URL;
+  const dbUrl = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || process.env.PGDATABASE_URL;
   if (!dbUrl) {
     return new Response(JSON.stringify({ database: "disconnected", error: "NEON_DATABASE_URL not set" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 
   try {
-    const sql = neon(dbUrl);
+    const sql = neon(dbUrl, { fetchOptions: { signal: AbortSignal.timeout(15000) } });
     const pingResult = await sql`SELECT NOW() as server_time` as any;
     const serverTime = pingResult[0]?.server_time;
 

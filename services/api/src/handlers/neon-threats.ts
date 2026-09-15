@@ -154,16 +154,19 @@ function bufferHull(hull: [number, number][], buffer: number): [number, number][
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  const url = process.env.NEON_DATABASE_URL;
+  const url = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || process.env.PGDATABASE_URL;
   if (!url) {
     return new Response(JSON.stringify({ error: "missing NEON_DATABASE_URL", threats: [], clusters: [], count: 0 }),
       { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 
   try {
-    const sql = neon(url);
+    const sql = neon(url, { fetchOptions: { signal: AbortSignal.timeout(15000) } });
     const reqUrl = new URL(req.url);
-    const limit = Math.max(1, Math.min(500, Number(reqUrl.searchParams.get("limit") ?? 200)));
+    const requestedLimit = Number(reqUrl.searchParams.get("limit") ?? 500);
+    const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(500, Math.floor(requestedLimit))) : 500;
+    const requestedOffset = Number(reqUrl.searchParams.get("offset") ?? 0);
+    const offset = Number.isFinite(requestedOffset) ? Math.max(0, Math.floor(requestedOffset)) : 0;
     const clustered = reqUrl.searchParams.get("clustered") !== "false";
 
     const rows = await sql`
@@ -171,8 +174,8 @@ export default async function handler(req: Request): Promise<Response> {
              metadata, created_at, updated_at, source, data_source_run_id, forecast_hour, source_artifact
       FROM hazard_alerts
       WHERE is_active = TRUE
-      ORDER BY COALESCE(event_at, created_at) DESC
-      LIMIT ${limit};
+      ORDER BY COALESCE(event_at, created_at) DESC, id DESC
+      LIMIT ${limit} OFFSET ${offset};
     ` as any[];
 
     const rawThreats: RawThreat[] = rows
@@ -222,6 +225,9 @@ export default async function handler(req: Request): Promise<Response> {
 
     return new Response(JSON.stringify({
       threats: flatThreats, clusters,
+      total_count: bySource.reduce((sum: number, row: any) => sum + Number(row.count), 0),
+      next_offset: offset + rows.length,
+      has_more: offset + rows.length < bySource.reduce((sum: number, row: any) => sum + Number(row.count), 0),
       cluster_count: clusters.length, raw_count: rawThreats.length, count: flatThreats.length,
       active_run_ids: activeRuns.map((r: any) => r.data_source_run_id),
       by_source: Object.fromEntries(bySource.map((r: any) => [r.source, r.count])),

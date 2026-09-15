@@ -2,7 +2,8 @@ import { useEffect, useRef } from "react";
 import * as maptilersdk from "@maptiler/sdk";
 import "@maptiler/sdk/dist/maptiler-sdk.css";
 
-const MAPTILER_API_KEY = "19XDon3xsuxOLKdfcaZH";
+const MAPTILER_API_KEY = import.meta.env.VITE_MAPTILER_KEY?.trim() || "";
+const MAPTILER_STYLE = import.meta.env.VITE_MAPTILER_STYLE?.trim() || "backdrop-v4";
 
 interface MapViewProps {
   onZoomChange?: (zoom: number) => void;
@@ -21,7 +22,7 @@ const MapView = ({ onZoomChange, onCenterChange, onMapReady }: MapViewProps) => 
 
     map.current = new maptilersdk.Map({
       container: mapContainer.current,
-      style: `https://api.maptiler.com/maps/backdrop-v4/style.json?key=${MAPTILER_API_KEY}`,
+      style: `https://api.maptiler.com/maps/${encodeURIComponent(MAPTILER_STYLE)}/style.json?key=${encodeURIComponent(MAPTILER_API_KEY)}`,
       center: [0, 20],
       zoom: 2,
       pitch: 0,

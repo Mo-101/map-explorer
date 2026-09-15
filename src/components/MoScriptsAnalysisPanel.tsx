@@ -133,7 +133,8 @@ const MoScriptsAnalysisPanel = () => {
       setError(null);
     } catch (err) {
       console.error('Error fetching analysis:', err);
-      setError('Network error');
+      setAnalysis(null);
+      setError('Analysis endpoint unreachable');
     } finally {
       setLoading(false);
     }

@@ -9,6 +9,7 @@ interface LegendEntry {
 }
 
 interface MapLegendProps {
+  threatTypes: string[];
   threatCount: number;
   clusterCount: number;
   imergEnabled: boolean;
@@ -22,6 +23,10 @@ const THREAT_TYPES: LegendEntry[] = [
   { color: "#f97316", label: "Landslide", shape: "diamond" },
   { color: "#ec4899", label: "Outbreak", shape: "biohazard" },
   { color: "#8b5cf6", label: "Convergence", shape: "circle" },
+  { color: "#ef4444", label: "Storm", shape: "spiral" },
+  { color: "#f97316", label: "Earthquake", shape: "diamond" },
+  { color: "#eab308", label: "Drought", shape: "circle" },
+  { color: "#f97316", label: "Wildfire", shape: "circle" },
 ];
 
 const ShapeIcon = ({ shape, color }: { shape: string; color: string }) => {
@@ -91,6 +96,7 @@ const ShapeIcon = ({ shape, color }: { shape: string; color: string }) => {
 };
 
 const MapLegend = ({
+  threatTypes,
   threatCount,
   clusterCount,
   imergEnabled,
@@ -100,11 +106,11 @@ const MapLegend = ({
   const [expanded, setExpanded] = useState(false);
 
   const overlays: LegendEntry[] = [];
-  if (imergEnabled) overlays.push({ color: "#06b6d4", label: "IMERG Rainfall", shape: "circle", active: true });
+  if (imergEnabled) overlays.push({ color: "#06b6d4", label: "Rainfall ? Open-Meteo", shape: "circle", active: true });
   if (copernicusEnabled) overlays.push({ color: "#3b82f6", label: "EMS Flood Zones", shape: "fill", active: true });
   if (weatherLayer) overlays.push({ color: "#8b5cf6", label: `Weather: ${weatherLayer}`, shape: "fill", active: true });
 
-  const activeThreats = THREAT_TYPES.filter(() => threatCount > 0);
+  const activeThreats = THREAT_TYPES.filter(entry => threatTypes.includes(entry.label.toLowerCase()) || (entry.label === "Outbreak" && threatTypes.includes("cholera")));
 
   return (
     <div className="absolute bottom-14 right-5 z-20 w-[200px]">
@@ -155,8 +161,8 @@ const MapLegend = ({
                   Clusters
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <div className="w-3.5 h-3.5 rounded-sm border border-dashed" style={{ borderColor: "rgba(251,146,60,0.5)", background: "rgba(251,146,60,0.1)" }} />
-                  <span className="text-[9px] text-muted-foreground">{clusterCount} threat clusters</span>
+                  <div className="w-3.5 h-3.5 rounded-full border" style={{ borderColor: "rgba(251,146,60,0.5)", background: "rgba(251,146,60,0.1)" }} />
+                  <span className="text-[9px] text-muted-foreground">{clusterCount} alert locations</span>
                 </div>
               </div>
             )}
@@ -178,22 +184,9 @@ const MapLegend = ({
               </div>
             )}
 
-            {/* Severity scale */}
-            <div>
-              <div className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1">
-                Severity
-              </div>
-              <div className="flex items-center gap-0.5 h-2 rounded-full overflow-hidden">
-                <div className="flex-1 h-full bg-emerald-500/70" title="Low" />
-                <div className="flex-1 h-full bg-amber-500/70" title="Moderate" />
-                <div className="flex-1 h-full bg-orange-500/70" title="High" />
-                <div className="flex-1 h-full bg-red-500/70" title="Extreme" />
-              </div>
-              <div className="flex justify-between mt-0.5">
-                <span className="text-[7px] text-muted-foreground/50">Low</span>
-                <span className="text-[7px] text-muted-foreground/50">Extreme</span>
-              </div>
-            </div>
+            <p className="text-[9px] text-muted-foreground">Colors inside each globe show the signals together. Click to inspect every alert.</p>
+
+            <p className="text-[9px] text-muted-foreground">Open an alert for severity and source details.</p>
           </div>
         )}
       </div>

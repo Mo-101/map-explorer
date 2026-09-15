@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type * as maptilersdk from '@maptiler/sdk';
-import { fnUrl, authHeaders } from '@/services/apiBase';
+import { RAINFALL_POINTS } from '@/data/rainfallPoints';
 
 interface PrecipPoint {
   lat: number;
@@ -39,26 +39,42 @@ function precipRadius(mm: number): number {
 
 const IMERGRainfallLayer = ({ map, visible, mode }: IMERGRainfallLayerProps) => {
   const [data, setData] = useState<PrecipPoint[]>([]);
-  const markersRef = useRef<any[]>([]);
+  const [status, setStatus] = useState("Loading rainfall?");
+  const inFlight = useRef(false);
   const fetchedRef = useRef(false);
 
-  // Fetch IMERG data from the edge function
+  // Read weather observations without triggering an ingestion job or database writes.
   const fetchData = useCallback(async () => {
-    if (fetchedRef.current) return;
+    if (fetchedRef.current || inFlight.current) return;
+    inFlight.current = true;
+    setStatus("Loading rainfall?");
     try {
-      const resp = await fetch(fnUrl("ingest-gpm"), {
-        method: 'POST',
-        headers: authHeaders(),
+      const params = new URLSearchParams({
+        latitude: RAINFALL_POINTS.map(p => p.lat).join(","),
+        longitude: RAINFALL_POINTS.map(p => p.lon).join(","),
+        hourly: "precipitation", past_days: "3", forecast_days: "1", timezone: "UTC",
       });
-      if (!resp.ok) return;
-      const result = await resp.json();
-      if (result.precip_grid && Array.isArray(result.precip_grid)) {
-        setData(result.precip_grid);
-        fetchedRef.current = true;
-      }
-    } catch (e) {
-      console.warn('IMERG fetch error:', e);
-    }
+      const response = await fetch("https://api.open-meteo.com/v1/forecast?" + params, { signal: AbortSignal.timeout(20000) });
+      if (!response.ok) throw new Error("Rainfall provider returned HTTP " + response.status);
+      const payload = await response.json();
+      const rows = Array.isArray(payload) ? payload : [payload];
+      const now = Date.now();
+      const points = rows.flatMap((row, index) => {
+        const point = RAINFALL_POINTS[index];
+        if (!point || !row.hourly?.time || !row.hourly?.precipitation) return [];
+        const samples = row.hourly.time.map((time: string, i: number) => ({ time: Date.parse(time + "Z"), value: row.hourly.precipitation[i] }))
+          .filter((sample: { time: number; value: number }) => sample.time <= now && sample.time > now - 72 * 3600000 && Number.isFinite(sample.value));
+        if (samples.length < 72) return [];
+        const sum = (hours: number) => samples.filter((sample: { time: number }) => sample.time > now - hours * 3600000)
+          .reduce((total: number, sample: { value: number }) => total + sample.value, 0);
+        return [{ ...point, accum24h: sum(24), accum72h: sum(72) }];
+      });
+      setData(points);
+      fetchedRef.current = points.length > 0;
+      setStatus(points.length ? points.length + " rainfall locations ? Open-Meteo" : "No rainfall observations available");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Rainfall unavailable");
+    } finally { inFlight.current = false; }
   }, []);
 
   useEffect(() => {
@@ -69,7 +85,7 @@ const IMERGRainfallLayer = ({ map, visible, mode }: IMERGRainfallLayerProps) => 
 
   // Render circles on the map using GeoJSON source + circle layer
   useEffect(() => {
-    if (!map || !visible || data.length === 0) {
+    if (!map || data.length === 0) {
       // Remove layer if hidden
       if (map) {
         try {
@@ -84,7 +100,7 @@ const IMERGRainfallLayer = ({ map, visible, mode }: IMERGRainfallLayerProps) => 
     const features = data
       .filter(pt => {
         const val = mode === '24h' ? pt.accum24h : pt.accum72h;
-        return val > 1; // Only show points with measurable precip
+        return Number.isFinite(val);
       })
       .map(pt => {
         const val = mode === '24h' ? pt.accum24h : pt.accum72h;
@@ -168,9 +184,15 @@ const IMERGRainfallLayer = ({ map, visible, mode }: IMERGRainfallLayerProps) => 
         if (map.getSource('imerg-data')) map.removeSource('imerg-data');
       } catch { /* ignore cleanup errors */ }
     };
+  }, [map, data, mode]);
+
+  useEffect(() => {
+    for (const id of ["imerg-circles", "imerg-labels"]) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+    }
   }, [map, visible, data, mode]);
 
-  return null;
+  return visible ? <div role="status" className="absolute top-44 lg:top-36 left-5 z-20 neu-panel px-3 py-2 text-xs">{status} · {mode}</div> : null;
 };
 
 export default IMERGRainfallLayer;

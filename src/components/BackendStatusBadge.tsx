@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchSmokeTest } from "@/services/hazardsApi";
-import { pingApi, type ApiHealth } from "@/services/apiBase";
+import type { ApiHealth } from "@/services/apiBase";
 import MoScriptsTooltip from "@/components/MoScriptsTooltip";
 
 type SmokeData = {
@@ -14,7 +14,7 @@ type SmokeData = {
   checked_at?: string;
 };
 
-type Status = "ok" | "db_down" | "api_unreachable";
+type Status = "checking" | "ok" | "db_down" | "api_unreachable";
 
 export default function BackendStatusBadge() {
   const [data, setData] = useState<SmokeData | null>(null);
@@ -25,20 +25,16 @@ export default function BackendStatusBadge() {
     let cancelled = false;
 
     const check = async () => {
-      const health = await pingApi();
-      if (cancelled) return;
-      setApi(health);
-
-      if (!health.reachable) {
-        setData({ database: "unreachable", error: health.error ?? "API unreachable" });
-        return;
-      }
       try {
         const result = await fetchSmokeTest();
-        if (!cancelled) setData(result);
+        if (!cancelled) {
+          setApi({ reachable: true });
+          setData(result);
+        }
       } catch (e) {
         if (!cancelled) {
           const msg = e instanceof Error ? e.message : "unknown error";
+          setApi({ reachable: false, error: msg });
           setData({ database: "error", error: msg });
         }
       }
@@ -49,13 +45,14 @@ export default function BackendStatusBadge() {
     return () => { cancelled = true; window.clearInterval(id); };
   }, []);
 
-  const status: Status = !api?.reachable
+  const status: Status = !api ? "checking" : !api.reachable
     ? "api_unreachable"
     : data?.database === "connected"
       ? "ok"
       : "db_down";
 
   const label =
+    status === "checking" ? "CHECKING DATABASE" :
     status === "ok" ? "NEON DB OK" :
     status === "db_down" ? "NEON DB DOWN" :
     "API UNREACHABLE";
@@ -68,16 +65,18 @@ export default function BackendStatusBadge() {
         : "linear-gradient(90deg, transparent 5%, hsla(0, 70%, 55%, 0.5) 50%, transparent 95%)";
 
   const textColor =
+    status === "checking" ? "text-muted-foreground" :
     status === "ok" ? "text-emerald-300" :
     status === "db_down" ? "text-amber-300" :
     "text-red-300";
 
   const tooltipDesc =
+    status === "checking" ? "Checking the live database connection." :
     status === "ok"
       ? `Database connected. ${data?.active_threats ?? 0} active threats across ${data?.by_source ? Object.keys(data.by_source).length : 0} data sources. Auto-refreshes every 60s.`
       : status === "db_down"
         ? "API is reachable but the database is not responding. Live threat data may be stale."
-        : `Backend API is unreachable (${api?.error ?? "no response"}). The Fastify service may be offline or DNS is misconfigured.`;
+        : `Backend API is unreachable (${api?.error ?? "no response"}).`;
 
   return (
     <div className="absolute top-5 right-5 z-20">
@@ -134,9 +133,7 @@ export default function BackendStatusBadge() {
 
             {expanded && status === "api_unreachable" && (
               <div className="mt-2 pt-2 border-t border-border/30 text-muted-foreground/70 space-y-0.5">
-                <div>Service expected at the Fastify host.</div>
-                <div>Check: docker compose up -d on the VPS.</div>
-                <div>DNS: api.mostarindustries.com → VPS IP.</div>
+                <div>Live database status is unavailable. Retrying every 60 seconds.</div>
               </div>
             )}
           </div>

@@ -9,6 +9,7 @@
 
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import maplibregl from 'maplibre-gl';
+import { renderThreatIndicators } from '@/lib/threatIndicators';
 import { MoScript } from '../types/moscript';
 
 // =============================================================================
@@ -17,7 +18,7 @@ import { MoScript } from '../types/moscript';
 
 interface ThreatData {
   id: string;
-  threat_type: 'cyclone' | 'flood' | 'landslide' | 'outbreak' | 'cholera' | 'convergence';
+  threat_type: string;
   center_lat?: number;
   center_lng?: number;
   latitude?: number;
@@ -398,8 +399,13 @@ function addThreatPopup(map: MapLibreMap, threat: ThreatData): void {
     const impactInfo = calculateThreatImpact(threat);
     
     // Determine detection source
-    const detectionSource = threat.detection_details?.detection_source || 'MoScripts Intelligence';
+    const detectionSource = threat.detection_details?.detection_source || threat.detection_details?.source || 'MoScripts Intelligence';
     const detectionModel = threat.detection_details?.model || 'GraphCast ML';
+    const runId = threat.detection_details?.data_source_run_id || 'N/A';
+    const forecastHour = threat.detection_details?.forecast_hour;
+    const threshold = threat.detection_details?.threshold;
+    const measuredValue = threat.detection_details?.measured_value;
+    const unit = threat.detection_details?.unit || '';
     const confidence = ((threat.confidence || 0) * 100).toFixed(0);
     
     const threatColor = getThreatColor(threat.threat_type);
@@ -670,24 +676,29 @@ export const mo_THREAT_RENDERER: MoScript<ThreatRendererInputs, ThreatRendererRe
       layer.id.startsWith('threat-layer-') || layer.id.startsWith('threat-glow-') || layer.id.startsWith('threat-pulse-')
     ) || [];
     
+    const existingSources = new Set<string>();
     existingLayers.forEach(layer => {
       if (mapInstance.getLayer(layer.id)) {
         mapInstance.removeLayer(layer.id);
       }
       const sourceId = layer.id.replace('threat-layer-', 'threat-').replace('threat-glow-', 'threat-').replace('threat-pulse-', 'threat-');
+      existingSources.add(sourceId);
+    });
+    existingSources.forEach(sourceId => {
       if (mapInstance.getSource(sourceId)) {
         mapInstance.removeSource(sourceId);
       }
     });
     
-    // Render each threat
+    const visibleThreats: ThreatData[] = [];
     threats.forEach(threat => {
       const shouldRender = (
         (threat.threat_type === 'cyclone' && showAll.showCyclones) ||
         (threat.threat_type === 'flood' && showAll.showFloods) ||
         (threat.threat_type === 'landslide' && showAll.showLandslides) ||
-        (threat.threat_type === 'outbreak' && showAll.showOutbreaks) ||
-        (threat.threat_type === 'convergence' && showAll.showConvergences)
+        (['outbreak', 'cholera'].includes(threat.threat_type) && showAll.showOutbreaks) ||
+        (threat.threat_type === 'convergence' && showAll.showConvergences) ||
+        !['cyclone', 'flood', 'landslide', 'outbreak', 'cholera', 'convergence'].includes(threat.threat_type)
       );
       
       if (!shouldRender) return;
@@ -698,8 +709,7 @@ export const mo_THREAT_RENDERER: MoScript<ThreatRendererInputs, ThreatRendererRe
       
       try {
         // Render on map
-        createPulsingCircle(mapInstance, threat, color, size);
-        addThreatPopup(mapInstance, threat);
+        visibleThreats.push(threat);
         
         // Update counts
         result.totalRendered++;
@@ -727,6 +737,8 @@ export const mo_THREAT_RENDERER: MoScript<ThreatRendererInputs, ThreatRendererRe
       }
     });
     
+    result.totalRendered = renderThreatIndicators(mapInstance, visibleThreats, buildThreatIcon);
+    result.layersCreated = result.totalRendered ? ["hazard-location-globes"] : [];
     result.executionTime = Date.now() - startTime;
     return result;
   },
