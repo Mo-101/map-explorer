@@ -2,8 +2,7 @@
 // Typed client for The Phantom's Whisper Graph (read-only).
 // Matches the three stormscribe-003 query patterns: point, rollout, anomalies.
 
-import { fnUrl, authHeaders } from "./apiBase";
-const FN_URL = fnUrl("whisper-query");
+import { apiFetch } from "./apiBase";
 
 export interface WhisperForecast {
   location_id: string;
