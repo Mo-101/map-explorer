@@ -2,8 +2,7 @@
 // Typed client for The Phantom's Whisper Graph (read-only).
 // Matches the three stormscribe-003 query patterns: point, rollout, anomalies.
 
-import { fnUrl, authHeaders } from "./apiBase";
-const FN_URL = fnUrl("whisper-query");
+import { apiFetch } from "./apiBase";
 
 export interface WhisperForecast {
   location_id: string;
@@ -68,9 +67,8 @@ interface WhisperResponse<T> {
 
 async function call<T>(kind: string, params: Record<string, unknown>): Promise<WhisperResponse<T>> {
   try {
-    const res = await fetch(FN_URL, {
+    const res = await apiFetch("whisper-query", {
       method: "POST",
-      headers: authHeaders(),
       body: JSON.stringify({ kind, params }),
     });
     if (!res.ok) {

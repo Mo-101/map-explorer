@@ -7,35 +7,22 @@ import {
   PressureLayer,
   RadarLayer,
   ColorRamp,
-  ParticleLayer,
 } from "@maptiler/weather";
 
-// Custom WindArrowLayer implementation using ParticleLayer
-class WindArrowLayer extends ParticleLayer {
-  constructor(options?: { opacity?: number }) {
-    super(
-      "wind-arrows",
-      null, // TileLayerOptions
-      {       // ParticleLayerOptions
-        decodeChannels: "rg",
-        decodeAsWaves: false,
-        decodeMin: 0,
-        decodeMax: 255,
-        maxAmount: 128,
-        color: [0, 0, 0, 30],
-        fastColor: [0, 0, 0, 100],
-        drawAsLines: true,
-        size: 1.5,
-        speed: 0.001,
-        density: 2,
-      },
-      null // ColoringFragments
-    );
-    
-    if (options?.opacity) {
-      (this as any).setOpacity(options.opacity);
-    }
-  }
+// Long, bright streak particles (readable "arrows" look) built on WindLayer,
+// which is the supported way to render wind particles in @maptiler/weather.
+function createWindStreakLayer(id: string) {
+  return new WindLayer({
+    id,
+    opacity: 1,
+    colorramp: ColorRamp.builtin.NULL,
+    speed: 0.0012,
+    fadeFactor: 0.02,
+    maxAmount: 512,
+    density: 120,
+    color: [255, 255, 255, 60],
+    fastColor: [255, 245, 200, 220],
+  });
 }
 
 export type WeatherLayerType =
@@ -88,7 +75,7 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
   const [sliderMax, setSliderMax] = useState(0);
   const [pointerValue, setPointerValue] = useState("");
   const [ready, setReady] = useState(false);
-  const ANIMATION_SPEED = 3600; // 1x speed for all weather layers
+  const ANIMATION_SPEED = 900; // smooth, readable forecast playback
 
   const currentTimeRef = useRef<number | null>(null);
   const pointerLngLatRef = useRef<{ lng: number; lat: number } | null>(null);
@@ -173,8 +160,14 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
       case "wind":
         weatherLayer = new WindLayer({
           id: "wind",
-          opacity: 0.9,
-          colorramp: ColorRamp.builtin.VIRIDIS.scale(0, 40),
+          opacity: 0.85,
+          colorramp: ColorRamp.builtin.VIRIDIS.scale(0, 30),
+          speed: 0.0009,
+          fadeFactor: 0.025,
+          maxAmount: 384,
+          density: 100,
+          color: [255, 255, 255, 45],
+          fastColor: [255, 255, 255, 180],
         });
         break;
       case "wind+temperature":
@@ -184,16 +177,7 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
           id: "temp-bg",
         });
         
-        weatherLayer = new WindLayer({
-          id: "wind-particles",
-          colorramp: ColorRamp.builtin.NULL,
-          speed: 0.001,
-          fadeFactor: 0.03,
-          maxAmount: 256,
-          density: 200,
-          color: [0, 0, 0, 30],
-          fastColor: [0, 0, 0, 100],
-        });
+        weatherLayer = createWindStreakLayer("wind-particles");
         
         // Store both layers in multiLayers
         multiLayers.current[type] = {
@@ -204,10 +188,7 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
         };
         break;
       case "wind-arrows":
-        // Create wind arrows using custom ParticleLayer implementation
-        weatherLayer = new WindArrowLayer({
-          opacity: 0.8,
-        });
+        weatherLayer = createWindStreakLayer("wind-arrows");
         break;
     }
 
@@ -228,11 +209,6 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
         const endDate = weatherLayer.getAnimationEndDate();
         const currentDate = weatherLayer.getAnimationTimeDate();
         
-        console.log('🗓️ Weather Layer Timeline:');
-        console.log('  Start Date:', new Date(startDate * 1000));
-        console.log('  End Date:', new Date(endDate * 1000));
-        console.log('  Current Date:', currentDate);
-        console.log('  Forecast Hours:', (endDate - startDate) / 3600);
         
         if (sliderMin > 0 && currentTimeRef.current !== null) {
           weatherLayer.setAnimationTime(currentTimeRef.current);
@@ -269,11 +245,6 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
       const endDate = weatherLayer.getAnimationEndDate();
       const currentDate = weatherLayer.getAnimationTimeDate();
       
-      console.log('🗓️ Weather Layer Timeline:');
-      console.log('  Start Date:', new Date(startDate * 1000));
-      console.log('  End Date:', new Date(endDate * 1000));
-      console.log('  Current Date:', currentDate);
-      console.log('  Forecast Hours:', (endDate - startDate) / 3600);
       
       if (sliderMin > 0 && currentTimeRef.current !== null) {
         weatherLayer.setAnimationTime(currentTimeRef.current);
