@@ -161,8 +161,14 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
       case "wind":
         weatherLayer = new WindLayer({
           id: "wind",
-          opacity: 0.9,
-          colorramp: ColorRamp.builtin.VIRIDIS.scale(0, 40),
+          opacity: 0.85,
+          colorramp: ColorRamp.builtin.VIRIDIS.scale(0, 30),
+          speed: 0.0009,
+          fadeFactor: 0.025,
+          maxAmount: 384,
+          density: 100,
+          color: [255, 255, 255, 45],
+          fastColor: [255, 255, 255, 180],
         });
         break;
       case "wind+temperature":
@@ -172,16 +178,7 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
           id: "temp-bg",
         });
         
-        weatherLayer = new WindLayer({
-          id: "wind-particles",
-          colorramp: ColorRamp.builtin.NULL,
-          speed: 0.001,
-          fadeFactor: 0.03,
-          maxAmount: 256,
-          density: 200,
-          color: [0, 0, 0, 30],
-          fastColor: [0, 0, 0, 100],
-        });
+        weatherLayer = createWindStreakLayer("wind-particles");
         
         // Store both layers in multiLayers
         multiLayers.current[type] = {
