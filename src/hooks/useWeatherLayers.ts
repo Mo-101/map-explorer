@@ -7,7 +7,6 @@ import {
   PressureLayer,
   RadarLayer,
   ColorRamp,
-  ParticleLayer,
 } from "@maptiler/weather";
 
 // Long, bright streak particles (readable "arrows" look) built on WindLayer,
@@ -76,7 +75,7 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
   const [sliderMax, setSliderMax] = useState(0);
   const [pointerValue, setPointerValue] = useState("");
   const [ready, setReady] = useState(false);
-  const ANIMATION_SPEED = 3600; // 1x speed for all weather layers
+  const ANIMATION_SPEED = 900; // smooth, readable forecast playback
 
   const currentTimeRef = useRef<number | null>(null);
   const pointerLngLatRef = useRef<{ lng: number; lat: number } | null>(null);
@@ -210,8 +209,6 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
         const endDate = weatherLayer.getAnimationEndDate();
         const currentDate = weatherLayer.getAnimationTimeDate();
         
-        console.log('🗓️ Weather Layer Timeline:');
-        console.log('  Start Date:', new Date(startDate * 1000));
         console.log('  End Date:', new Date(endDate * 1000));
         console.log('  Current Date:', currentDate);
         console.log('  Forecast Hours:', (endDate - startDate) / 3600);
@@ -251,8 +248,6 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
       const endDate = weatherLayer.getAnimationEndDate();
       const currentDate = weatherLayer.getAnimationTimeDate();
       
-      console.log('🗓️ Weather Layer Timeline:');
-      console.log('  Start Date:', new Date(startDate * 1000));
       console.log('  End Date:', new Date(endDate * 1000));
       console.log('  Current Date:', currentDate);
       console.log('  Forecast Hours:', (endDate - startDate) / 3600);
