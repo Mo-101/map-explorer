@@ -209,9 +209,6 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
         const endDate = weatherLayer.getAnimationEndDate();
         const currentDate = weatherLayer.getAnimationTimeDate();
         
-        console.log('  End Date:', new Date(endDate * 1000));
-        console.log('  Current Date:', currentDate);
-        console.log('  Forecast Hours:', (endDate - startDate) / 3600);
         
         if (sliderMin > 0 && currentTimeRef.current !== null) {
           weatherLayer.setAnimationTime(currentTimeRef.current);
@@ -248,9 +245,6 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
       const endDate = weatherLayer.getAnimationEndDate();
       const currentDate = weatherLayer.getAnimationTimeDate();
       
-      console.log('  End Date:', new Date(endDate * 1000));
-      console.log('  Current Date:', currentDate);
-      console.log('  Forecast Hours:', (endDate - startDate) / 3600);
       
       if (sliderMin > 0 && currentTimeRef.current !== null) {
         weatherLayer.setAnimationTime(currentTimeRef.current);
