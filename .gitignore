@@ -32,3 +32,6 @@ __pycache__/
 
 # Local backend debug logs
 tmp_backend.*
+
+# Local Python model service (not part of the Vercel build)
+src/model-service/

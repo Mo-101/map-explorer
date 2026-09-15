@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type * as maptilersdk from '@maptiler/sdk';
 import { fetchRealtimeThreats } from '@/services/hazardsApi';
-import { fnUrl, authHeaders } from '@/services/apiBase';
+import { apiFetch } from '@/services/apiBase';
 import { useToast } from '@/hooks/use-toast';
 
 interface TickerItem {
@@ -168,9 +168,8 @@ const AI_CACHE_MS = 5 * 60 * 1000;
 async function fetchAISummary(threats: any[]): Promise<string | null> {
   if (cachedSummary && Date.now() - cachedSummary.ts < AI_CACHE_MS) return cachedSummary.text;
   try {
-    const resp = await fetch(fnUrl("ai-situational-summary"), {
+    const resp = await apiFetch("ai-situational-summary", {
       method: 'POST',
-      headers: authHeaders(),
       body: JSON.stringify({ threats }),
     });
     if (!resp.ok) return null;
