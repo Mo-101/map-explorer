@@ -113,22 +113,14 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
       if (!previous || displayed === type || !bundle.layers.every(layer => typeof layer.setOpacity === "function")) return commit();
       for (const layer of bundle.layers) layer.setOpacity(0);
       visibility(bundle, true);
-      const requestedAt = performance.now();
       let fadeStarted = 0;
       const transition = (now: number) => {
         if (disposed || selected !== type) return;
-        const center = map.getCenter();
-        const hasTiles = bundle.layers.every(layer => layer.pickAt(center.lng, center.lat) != null);
-        if (!fadeStarted && !hasTiles) {
-          if (now - requestedAt > 8000) {
-            visibility(bundle, false);
-            setLoading(false); setError("No weather data at this location. The previous layer remains visible.");
-            return;
-          }
-          map.triggerRepaint();
-          transitionFrame = requestAnimationFrame(transition);
-          return;
-        }
+        // The layer's own "sourceReady" has already fired by the time activate()
+        // runs, so the tiles are loaded. Do not gate the crossfade on pickAt():
+        // it returns null wherever the layer simply has no value at that point
+        // (dry ground for precipitation, anywhere outside radar coverage), which
+        // would strand every sparse layer behind a "no data" error.
         fadeStarted ||= now;
         const fraction = Math.min(1, (now - fadeStarted) / 240);
         for (const layer of bundle.layers) layer.setOpacity(fraction);
