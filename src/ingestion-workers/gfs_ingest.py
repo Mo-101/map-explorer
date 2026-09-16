@@ -180,7 +180,7 @@ def _detect_point_hazards(point: Dict[str, Any], run_id: str, hourly: Dict[str, 
     times = hourly.get("time") or []
     wind = hourly.get("wind_speed_10m") or []
     gust = hourly.get("wind_gusts_10m") or []
-    pressure = hourly.get("surface_pressure") or []
+    pressure = hourly.get("pressure_msl") or []
     precip = hourly.get("precipitation") or []
 
     for i in range(len(times)):
@@ -434,7 +434,7 @@ def main() -> int:
             url = (
                 "https://api.open-meteo.com/v1/gfs"
                 f"?latitude={point['lat']}&longitude={point['lon']}"
-                "&hourly=wind_speed_10m,wind_gusts_10m,surface_pressure,precipitation"
+                "&hourly=wind_speed_10m,wind_gusts_10m,pressure_msl,precipitation"
                 f"&forecast_hours={FORECAST_HOURS}&wind_speed_unit=ms&timezone=UTC"
             )
             try:

@@ -200,7 +200,11 @@ function detectPointHazards(
   const times = Array.isArray(hourly?.time) ? hourly.time : [];
   const wind = Array.isArray(hourly?.wind_speed_10m) ? hourly.wind_speed_10m : [];
   const gust = Array.isArray(hourly?.wind_gusts_10m) ? hourly.wind_gusts_10m : [];
-  const mslp = Array.isArray(hourly?.surface_pressure) ? hourly.surface_pressure : [];
+  // Must be mean-sea-level pressure, not surface pressure: the mslp_* thresholds
+  // are cyclone-intensity values reduced to sea level. Surface pressure falls with
+  // terrain height, so comparing it against 970/990 hPa flags the East African
+  // highlands as "extreme cyclones" purely because they sit ~1.5-3km up.
+  const mslp = Array.isArray(hourly?.pressure_msl) ? hourly.pressure_msl : [];
   const precip = Array.isArray(hourly?.precipitation) ? hourly.precipitation : [];
 
   const hazards: HazardRow[] = [];
@@ -481,7 +485,7 @@ serve(async (req) => {
       try {
         const omUrl = `https://api.open-meteo.com/v1/gfs?` +
           `latitude=${pt.lat}&longitude=${pt.lon}&` +
-          `hourly=wind_speed_10m,wind_gusts_10m,surface_pressure,precipitation&` +
+          `hourly=wind_speed_10m,wind_gusts_10m,pressure_msl,precipitation&` +
           `forecast_hours=72&wind_speed_unit=ms&timezone=UTC`;
 
         const response = await fetchWithTimeout(omUrl);
