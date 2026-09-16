@@ -28,6 +28,7 @@ decoded cycle, and must be run before the mapping is trusted in production.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
@@ -85,6 +86,27 @@ class AcquisitionCode:
     UNMAPPED_VARIABLE = "UNMAPPED_VARIABLE"
     UNAVAILABLE_CYCLE = "UNAVAILABLE_CYCLE"
     SHORTNAME_MISMATCH = "SHORTNAME_MISMATCH"
+    UNVERIFIED_CHECKPOINT = "UNVERIFIED_CHECKPOINT"
+
+
+# Development escape hatch. Production must never set this: with the checkpoint
+# mount gone, resolve_contract(None) returns the pinned literal, and without
+# this gate a request would still be generated from a contract nothing verified.
+PINNED_CONTRACT_ENV = "MOSTAR_ALLOW_PINNED_CONTRACT"
+
+
+def _unwrap(source: Any) -> tuple[GraphCastContract, bool]:
+    """Accept a VerifiedCheckpoint or a bare contract; report which."""
+    contract = getattr(source, "contract", None)
+    if contract is not None:
+        return contract, bool(getattr(source, "checkpoint_verified", False))
+    return source, False
+
+
+def _pinned_allowed(explicit: bool | None) -> bool:
+    if explicit is not None:
+        return explicit
+    return os.environ.get(PINNED_CONTRACT_ENV) == "1"
 
 
 @dataclass(frozen=True)
@@ -118,12 +140,27 @@ def contract_id(contract: GraphCastContract) -> str:
     )
 
 
-def build_acquisition_manifest(contract: GraphCastContract) -> GfsAcquisitionManifest:
-    """Generate the acquisition manifest from a resolved contract.
+def build_acquisition_manifest(
+    source: Any, *, allow_pinned: bool | None = None
+) -> GfsAcquisitionManifest:
+    """Generate the acquisition manifest from a *verified* checkpoint.
+
+    Pass the VerifiedCheckpoint returned by ``checkpoint.verify()``. Passing a
+    bare contract is a development affordance and requires either
+    ``allow_pinned=True`` or ``MOSTAR_ALLOW_PINNED_CONTRACT=1``.
 
     Fails closed on any contract variable with no known GFS source, rather than
     quietly omitting it and letting validate_state discover the hole later.
     """
+    contract, verified = _unwrap(source)
+    if not verified and not _pinned_allowed(allow_pinned):
+        raise AcquisitionError(
+            AcquisitionCode.UNVERIFIED_CHECKPOINT,
+            "refusing to generate a NOMADS request from an unverified contract. "
+            "Install the bundle and pass checkpoint.verify(...), or set "
+            f"{PINNED_CONTRACT_ENV}=1 for development only.",
+        )
+
     unmapped = [v for v in contract.atmospheric_variables if v not in ATMOSPHERIC_TO_GRIB]
     if unmapped:
         raise AcquisitionError(

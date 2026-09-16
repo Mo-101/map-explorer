@@ -118,6 +118,70 @@ class CheckpointManifest:
         return CheckpointManifest(**json.loads(text))
 
 
+@dataclass(frozen=True)
+class VerificationReport:
+    """Evidence that a real checkpoint was read — not the pinned literal.
+
+    ``checkpoint_verified`` is the single flag production gates on. It is only
+    ever True on a path that actually opened the params file and read its
+    TaskConfig, so a vanished checkpoint mount cannot silently degrade into the
+    pinned contract and carry on generating requests.
+    """
+
+    checkpoint_verified: bool
+    model: str
+    resolution_deg: float
+    pressure_levels: int
+    precipitation_input: bool
+    precipitation_output: bool
+    checkpoint_sha256: str
+    task_config_sha256: str
+    contract_sha256: str
+    license_sha256: str | None
+    source_revision: str
+    verified_at: str
+
+    def to_json(self) -> str:
+        return json.dumps(asdict(self), indent=2, sort_keys=True) + "\n"
+
+
+@dataclass(frozen=True)
+class VerifiedCheckpoint:
+    manifest: CheckpointManifest
+    contract: GraphCastContract
+    report: VerificationReport
+
+    @property
+    def checkpoint_verified(self) -> bool:
+        return self.report.checkpoint_verified
+
+
+def _build_report(
+    manifest: CheckpointManifest,
+    contract: GraphCastContract,
+    *,
+    from_real_checkpoint: bool,
+) -> VerificationReport:
+    # GraphCast_operational is precipitation-out-only: absent from inputs,
+    # present in targets. Recording both sides makes a checkpoint swap to
+    # TASK/TASK_13 visible in the report rather than only at inference.
+    precip = "total_precipitation_6hr"
+    return VerificationReport(
+        checkpoint_verified=from_real_checkpoint,
+        model=manifest.model,
+        resolution_deg=contract.resolution_deg,
+        pressure_levels=len(contract.pressure_levels_hpa),
+        precipitation_input=precip in contract.required_variables,
+        precipitation_output=True,
+        checkpoint_sha256=manifest.params_sha256,
+        task_config_sha256=manifest.task_config_hash,
+        contract_sha256=task_config_hash(contract),
+        license_sha256=manifest.license_sha256,
+        source_revision=manifest.source_revision,
+        verified_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+
 def _require(path: str, code: str, what: str) -> str:
     if not os.path.exists(path):
         raise CheckpointError(code, f"{what} not found at {path}")
@@ -222,12 +286,17 @@ def install(root: str, *, source_revision: str, task_config: Any | None = None) 
     return manifest
 
 
-def verify(root: str, *, task_config: Any | None = None) -> tuple[CheckpointManifest, GraphCastContract]:
+def verify(root: str, *, task_config: Any | None = None) -> VerifiedCheckpoint:
     """Gate run startup. Re-hashes every artifact against the stored manifest.
 
     Raises rather than returning a status: a run must not proceed past a
     checkpoint whose bytes or contract no longer match what was installed.
+
+    ``task_config`` is injected only by tests. When it is None the config is
+    read from the real params file, and only that path sets
+    ``checkpoint_verified``.
     """
+    from_real_checkpoint = task_config is None
     manifest_path = os.path.join(root, MANIFEST_NAME)
     if not os.path.exists(manifest_path):
         raise CheckpointError(
@@ -268,4 +337,8 @@ def verify(root: str, *, task_config: Any | None = None) -> tuple[CheckpointMani
             CheckpointCode.HASH_MISMATCH,
             "LICENSE text changed since install; re-record the revision",
         )
-    return stored, contract
+    return VerifiedCheckpoint(
+        manifest=stored,
+        contract=contract,
+        report=_build_report(stored, contract, from_real_checkpoint=from_real_checkpoint),
+    )

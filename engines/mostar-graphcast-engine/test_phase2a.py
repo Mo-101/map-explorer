@@ -117,7 +117,8 @@ class TestCheckpointVerify(BundleTestCase):
         install(self.root, source_revision="abc123", task_config=_TaskConfig())
 
     def test_verify_passes_unchanged_bundle(self):
-        manifest, contract = verify(self.root, task_config=_TaskConfig())
+        verified = verify(self.root, task_config=_TaskConfig())
+        manifest, contract = verified.manifest, verified.contract
         self.assertEqual(contract.pressure_levels_hpa, CONTRACT.pressure_levels_hpa)
         self.assertEqual(manifest.source_revision, "abc123")
 
@@ -162,7 +163,7 @@ class TestCheckpointVerify(BundleTestCase):
 
 class TestAcquisitionManifest(unittest.TestCase):
     def setUp(self):
-        self.manifest = build_acquisition_manifest(CONTRACT)
+        self.manifest = build_acquisition_manifest(CONTRACT, allow_pinned=True)
 
     def test_contract_id_records_levels(self):
         self.assertEqual(contract_id(CONTRACT), "graphcast-operational-0p25-13l-v1")
@@ -201,13 +202,13 @@ class TestAcquisitionManifest(unittest.TestCase):
             forcing_variables=(), static_variables=(),
         )
         with self.assertRaises(AcquisitionError) as ctx:
-            build_acquisition_manifest(bogus)
+            build_acquisition_manifest(bogus, allow_pinned=True)
         self.assertEqual(ctx.exception.code, AcquisitionCode.UNMAPPED_VARIABLE)
 
 
 class TestNomadsRequest(unittest.TestCase):
     def setUp(self):
-        self.manifest = build_acquisition_manifest(CONTRACT)
+        self.manifest = build_acquisition_manifest(CONTRACT, allow_pinned=True)
         self.cycle = GfsCycle(date="20260916", hour=12)
 
     def test_request_selects_only_contract_levels(self):
