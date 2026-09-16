@@ -43,6 +43,9 @@ from contract import (
 G0 = 9.80665
 
 # cfgrib's names for the GFS grid, which GraphCast does not accept.
+# The vertical coordinate of the pressure stack, as cfgrib reports it.
+ISOBARIC_LEVEL = "isobaricInhPa"
+
 CFGRIB_LAT = "latitude"
 CFGRIB_LON = "longitude"
 
@@ -182,8 +185,15 @@ def resolve_mapping(
     selectors: Sequence[FieldSelector],
     *,
     strict_units: bool = True,
+    expected_levels: Sequence[int] | None = None,
 ) -> dict[str, list[GribMessage]]:
     """Bind canonical names to observed messages, failing on surprises.
+
+    The hard rule: **one expected canonical field at one level must resolve to
+    exactly one decoded GRIB message.** Zero is FIELD_NOT_FOUND, more than one
+    is AMBIGUOUS_FIELD. There is never a "take the first" branch — duplicate
+    messages at the same level mean two different encodings of what we are
+    about to treat as one field, and picking arbitrarily hides that.
 
     Corrects nothing silently: a units mismatch raises so the mapping is fixed
     against the decoded file rather than the file being coerced to the mapping.
@@ -205,11 +215,42 @@ def resolve_mapping(
                     f"{selector.canonical}: expected units {selector.expected_units!r}, "
                     f"decoded {sorted({m.units for m in wrong})}",
                 )
-        if selector.level is not None and len(found) > 1:
+
+        # Exactly-one-per-level, whether the selector pins a level or spans the
+        # isobaric stack.
+        by_level: dict[int, list[GribMessage]] = {}
+        for message in found:
+            by_level.setdefault(message.level, []).append(message)
+        duplicated = {lv: len(v) for lv, v in by_level.items() if len(v) > 1}
+        if duplicated:
             raise CanonicalError(
                 CanonicalCode.AMBIGUOUS_FIELD,
-                f"{selector.canonical} matched {len(found)} messages at a fixed level",
+                f"{selector.canonical} resolved to multiple messages at level(s) "
+                f"{sorted(duplicated)}: {duplicated}. Refusing to pick one — "
+                "duplicate messages mean two encodings of the same field.",
             )
+
+        # Only the isobaric stack spans the contract's pressure levels. A
+        # surface selector also leaves `level` unpinned (prmsl sits on meanSea),
+        # so keying off `level is None` alone would demand 13 pressure levels
+        # from mean-sea-level pressure.
+        spans_isobaric_stack = (
+            selector.level is None and selector.typeOfLevel == ISOBARIC_LEVEL
+        )
+        if spans_isobaric_stack and expected_levels is not None:
+            missing = [lv for lv in expected_levels if lv not in by_level]
+            if missing:
+                raise CanonicalError(
+                    CanonicalCode.FIELD_NOT_FOUND,
+                    f"{selector.canonical} missing at level(s) {missing} hPa",
+                )
+            extra = [lv for lv in by_level if lv not in expected_levels]
+            if extra:
+                raise CanonicalError(
+                    CanonicalCode.AMBIGUOUS_FIELD,
+                    f"{selector.canonical} present at unrequested level(s) {sorted(extra)} hPa",
+                )
+
         resolved[selector.canonical] = found
     return resolved
 
