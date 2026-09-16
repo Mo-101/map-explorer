@@ -1,15 +1,25 @@
 """GFS GRIB → xarray adapter for GraphCast.
 
-GraphCast expects:
-- A regular lat/lon grid at 0.25° resolution
-- Surface variables: 2t, 10u, 10v, msl, tp, tcwv
-- Pressure-level variables at 37 levels: z, t, q, u, v, w
-- Derived time features: year_progress_sin/cos, day_progress_sin/cos
-- Two consecutive timesteps (t-6h, t) as input state
+The authoritative input contract lives in `contract.py`, derived from the
+checkpoint's own TaskConfig. Do not restate it here — this docstring previously
+claimed 37 pressure levels while PRESSURE_LEVELS below held 13, which is exactly
+the drift `contract.py` exists to prevent.
 
-This module shapes GFS forecasts into that contract. The full implementation
-requires the vendored `graphcast.data_utils` for stats application; this file
-covers the GFS-specific pre-processing.
+Target is GraphCast_operational (TASK_13_PRECIP_OUT): 0.25°, 13 WeatherBench
+levels, two input timesteps (t-6h, t), and no precipitation among the inputs.
+
+Known gaps in this module, each enforced by `contract.validate_state`:
+- `clip_to_africa` is applied to the *input* state. GraphCast is global; the
+  clip belongs on the output. Calling it before inference is invalid.
+- Coordinates must be named `lat`/`lon`. cfgrib emits `latitude`/`longitude`
+  for GFS, so they have to be renamed.
+- GFS latitude descends; GraphCast requires ascending -90 → 90.
+- `toa_incident_solar_radiation` is not a GFS field. Compute it with
+  `graphcast.solar_radiation` for input and target lead times.
+- `geopotential_at_surface` and `land_sea_mask` are static fields that do not
+  come from a GFS cycle at all; they ship from the ERA5/HRES static dataset.
+- GFS distributes geopotential *height* (gh, m). GraphCast wants geopotential
+  (m²/s²): multiply by g. Pressure arrives in Pa, thresholds are in hPa.
 """
 from __future__ import annotations
 import math
