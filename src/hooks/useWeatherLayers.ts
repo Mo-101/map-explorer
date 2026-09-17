@@ -160,7 +160,7 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
       bundles.set(type, bundle);
       try {
         // Weather stays below labels and operational indicators on every style.
-        const before = map.getStyle().layers?.find(layer => layer.type === "symbol" || /^(threat-|hazard-|cluster-|copernicus-|imerg-)/.test(layer.id))?.id;
+        const before = map.getStyle().layers?.find(layer => layer.type === "symbol" || /^(boundary-|threat-|hazard-|cluster-|copernicus-|imerg-)/.test(layer.id))?.id;
         for (const layer of bundle.layers) {
           const onReady = () => {
             if (disposed || bundles.get(type) !== bundle) return;

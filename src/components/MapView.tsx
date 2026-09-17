@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import * as maptilersdk from "@maptiler/sdk";
 import "@maptiler/sdk/dist/maptiler-sdk.css";
+import { addBoundaryLayers } from "@/lib/mapBoundaries";
 
 const MAPTILER_API_KEY = import.meta.env.VITE_MAPTILER_KEY?.trim() || "";
 const MAPTILER_STYLE = import.meta.env.VITE_MAPTILER_STYLE?.trim() || "backdrop-v4";
@@ -44,7 +45,13 @@ const MapView = ({ onZoomChange, onCenterChange, onMapReady }: MapViewProps) => 
 
     // Wait for style to load before notifying parent
     map.current.on("load", () => {
+      addBoundaryLayers(map.current!);
       onMapReady?.(map.current!);
+    });
+
+    // A basemap style swap drops every added layer, so re-add on restyle.
+    map.current.on("styledata", () => {
+      if (map.current?.isStyleLoaded()) addBoundaryLayers(map.current);
     });
 
     return () => {
