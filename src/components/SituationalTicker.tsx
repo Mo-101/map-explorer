@@ -189,9 +189,22 @@ interface SituationalTickerProps {
   onThreatSelect?: (threat: any) => void;
 }
 
+// Stable identity for a signal across polls. Falls back to the detection's
+// position and type when the feed supplies no id, so unidentified signals are
+// not reported as new on every refresh.
+function signalKey(t: any, i: number): string {
+  const id = t?.id ?? t?.external_id;
+  if (id != null && id !== '') return `id:${id}`;
+  const type = t?.threat_type ?? t?.type ?? 'unknown';
+  const lat = t?.center_lat ?? t?.latitude ?? t?.lat;
+  const lng = t?.center_lng ?? t?.longitude ?? t?.lng ?? t?.lon;
+  if (lat == null || lng == null) return `idx:${i}:${type}`;
+  return `geo:${type}:${Number(lat).toFixed(3)}:${Number(lng).toFixed(3)}`;
+}
+
 const SituationalTicker = ({ mapInstance, onThreatSelect }: SituationalTickerProps) => {
   const [items, setItems] = useState<TickerItem[]>([]);
-  const [prevCount, setPrevCount] = useState<number | null>(null);
+  const seenSignalsRef = useRef<Set<string> | null>(null);
   const tickerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -214,24 +227,16 @@ const SituationalTicker = ({ mapInstance, onThreatSelect }: SituationalTickerPro
 
       setItems(newItems);
 
-      const newCount = threats.length;
-      if (prevCount !== null && newCount !== prevCount) {
-        const diff = newCount - prevCount;
-        if (diff > 0) {
-          toast({
-            title: '⚠️ New hazard signals detected',
-            description: `${diff} new signal${diff > 1 ? 's' : ''} added (${newCount} total)`,
-            variant: 'destructive',
-          });
-        } else if (diff < 0) {
-          toast({
-            title: '✅ Hazard signals cleared',
-            description: `${Math.abs(diff)} signal${Math.abs(diff) > 1 ? 's' : ''} resolved (${newCount} remaining)`,
-          });
-        }
-      }
+      // Track signals by identity, not by count: an equal number of signals
+      // resolving and arriving between polls is still new information, and a
+      // count comparison silently misses it.
+      const ids: string[] = threats.map((t: any, i: number) => signalKey(t, i));
+      const current = new Set<string>(ids);
+      const seen = seenSignalsRef.current;
 
-      if (prevCount === null && threats.length > 0) {
+      if (seen === null) {
+        // First load - report what is already standing rather than replaying it
+        // as if it had just arrived.
         const extremeCount = threats.filter(t => t.severity === 'extreme').length;
         if (extremeCount > 0) {
           toast({
@@ -240,13 +245,36 @@ const SituationalTicker = ({ mapInstance, onThreatSelect }: SituationalTickerPro
             variant: 'destructive',
           });
         }
+      } else {
+        const fresh = threats.filter((_, i) => !seen.has(ids[i]));
+        let resolved = 0;
+        for (const id of seen) if (!current.has(id)) resolved += 1;
+
+        if (fresh.length > 0) {
+          const extreme = fresh.filter(t => t.severity === 'extreme').length;
+          const lead = fresh[0];
+          const where = lead?.title || [lead?.threat_type, lead?.type].find(Boolean) || 'monitored regions';
+          toast({
+            title: `⚠️ ${fresh.length} new hazard signal${fresh.length > 1 ? 's' : ''}`,
+            description: fresh.length === 1
+              ? `${where} (${threats.length} active)`
+              : `${where} +${fresh.length - 1} more${extreme > 0 ? ` · ${extreme} extreme` : ''} (${threats.length} active)`,
+            variant: 'destructive',
+          });
+        }
+        if (resolved > 0) {
+          toast({
+            title: '✅ Hazard signals cleared',
+            description: `${resolved} signal${resolved > 1 ? 's' : ''} resolved (${threats.length} remaining)`,
+          });
+        }
       }
 
-      setPrevCount(newCount);
+      seenSignalsRef.current = current;
     } catch {
       setItems([{ module: 'STATUS', text: 'Analysis feed temporarily unavailable', severity: 'info' }]);
     }
-  }, [prevCount, toast]);
+  }, [toast]);
 
   useEffect(() => {
     fetchAndBuild();

@@ -111,6 +111,7 @@ const ClusterPolygonLayer = ({ map, clusters, onClusterClick }: ClusterPolygonLa
   const popupRef = useRef<any>(null);
 
   useEffect(() => {
+    const removeListeners: (() => void)[] = [];
     if (!map || clusters.length === 0) {
       try {
         [LABEL_LAYER, CENTER_LAYER, STROKE_LAYER, FILL_LAYER].forEach(id => {
@@ -264,7 +265,6 @@ const ClusterPolygonLayer = ({ map, clusters, onClusterClick }: ClusterPolygonLa
       }
 
       // ── Hover tooltip for cluster centers ──
-      const maptilersdk = (window as any).maptilersdk || {};
       let popup = popupRef.current;
       if (!popup) {
         try {
@@ -313,6 +313,12 @@ const ClusterPolygonLayer = ({ map, clusters, onClusterClick }: ClusterPolygonLa
       map.on('mouseleave', CENTER_LAYER, onCenterLeave);
       map.on('mouseenter', FILL_LAYER, onPolyEnter);
       map.on('mouseleave', FILL_LAYER, onPolyLeave);
+      removeListeners.push(() => {
+        map.off('mouseenter', CENTER_LAYER, onCenterEnter);
+        map.off('mouseleave', CENTER_LAYER, onCenterLeave);
+        map.off('mouseenter', FILL_LAYER, onPolyEnter);
+        map.off('mouseleave', FILL_LAYER, onPolyLeave);
+      });
 
       // Click handler for clusters
       if (clickHandlerRef.current) {
@@ -335,6 +341,7 @@ const ClusterPolygonLayer = ({ map, clusters, onClusterClick }: ClusterPolygonLa
     }
 
     return () => {
+      removeListeners.forEach(remove => remove());
       try {
         popupRef.current?.remove();
         if (clickHandlerRef.current) {

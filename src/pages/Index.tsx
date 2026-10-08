@@ -10,12 +10,14 @@ import ThreatDetailsPanel from "@/components/ThreatDetailsPanel";
 import IMERGRainfallLayer from "@/components/IMERGRainfallLayer";
 import MapLegend from "@/components/MapLegend";
 import CopernicusFloodLayer from "@/components/CopernicusFloodLayer";
-import ClusterPolygonLayer from "@/components/ClusterPolygonLayer";
+import { groupThreatLocations } from "@/lib/threatLocations";
 import ClusterStatsBadge from "@/components/ClusterStatsBadge";
 import GdacsRiskSummary from "@/components/GdacsRiskSummary";
 import FloodComparisonPanel from "@/components/FloodComparisonPanel";
 import WeatherCard from "@/components/WeatherCard";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
+import { useEarlyWarnings } from "@/hooks/useEarlyWarnings";
+import EarlyWarningCenter from "@/components/EarlyWarningCenter";
 import { orchestrator, emit } from "@/moscripts";
 import { mo_THREAT_RENDERER } from "@/moscripts";
 import { fetchRealtimeThreats } from "@/services/hazardsApi";
@@ -27,9 +29,12 @@ function normalizeThreats(data: any): ThreatLike[] {
   const list: ThreatLike[] = Array.isArray(data.threats) ? data.threats : [];
   return list
     .map((t, idx) => {
-      const lat = Number(t.center_lat ?? t.latitude ?? t.lat);
-      const lng = Number(t.center_lng ?? t.center_lon ?? t.longitude ?? t.lng ?? t.lon);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      const rawLat = t.center_lat ?? t.latitude ?? t.lat;
+      const rawLng = t.center_lng ?? t.center_lon ?? t.longitude ?? t.lng ?? t.lon;
+      if (rawLat == null || rawLng == null || rawLat === "" || rawLng === "") return null;
+      const lat = Number(rawLat);
+      const lng = Number(rawLng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
       const threatType = String(t.threat_type ?? t.type ?? "unknown").toLowerCase();
       return { ...t, id: t.id ?? `th-${idx}`, threat_type: threatType, center_lat: lat, center_lng: lng };
     })
@@ -45,11 +50,12 @@ const Index = () => {
   const [allThreats, setAllThreats] = useState<any[]>([]);
   const [imergEnabled, setImergEnabled] = useState(false);
   const [imergMode, setImergMode] = useState<'24h' | '72h'>('24h');
-  const [clusters, setClusters] = useState<any[]>([]);
+  const locationCount = useMemo(() => groupThreatLocations(allThreats).length, [allThreats]);
   const [copernicusFloodEnabled, setCopernicusFloodEnabled] = useState(false);
   const [copernicusGeoJson, setCopernicusGeoJson] = useState<any>(null);
 
   const weather = useWeatherLayers(mapInstance);
+  const ews = useEarlyWarnings(allThreats);
 
   // Load Copernicus GeoJSON for comparison panel
   useEffect(() => {
@@ -91,8 +97,7 @@ const Index = () => {
         const data = await fetchRealtimeThreats();
         const threats = normalizeThreats(data);
         setAllThreats(threats);
-        if (Array.isArray(data?.clusters)) setClusters(data.clusters);
-        if (threats.length > 0) await emit('onThreatsUpdate', { threats, mapInstance });
+        await emit('onThreatsUpdate', { threats, mapInstance });
       } catch (error) {
         console.error('❌ Failed to load threats:', error);
       }
@@ -140,14 +145,16 @@ const Index = () => {
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-background">
       <SituationalTicker mapInstance={mapInstance} onThreatSelect={handleThreatSelect} />
+      <EarlyWarningCenter map={mapInstance} alerts={ews.alerts} enso={ews.enso} updatedAt={ews.updatedAt} error={ews.error}
+        notify={ews.notify} onToggleNotify={ews.toggleNotify} onRefresh={ews.refresh} onFlyTo={handleFlyTo} />
       <MapView
         onZoomChange={setZoom}
         onCenterChange={(lng, lat) => setCoordinates({ lng, lat })}
         onMapReady={handleMapReady}
       />
       <BackendStatusBadge />
-      <MapControls zoom={zoom} coordinates={coordinates} />
-      <ClusterStatsBadge clusterCount={clusters.length} rawThreatCount={allThreats.length} />
+      <MapControls zoom={zoom} coordinates={coordinates} map={mapInstance} />
+      <ClusterStatsBadge clusterCount={locationCount} rawThreatCount={allThreats.length} />
 
       {mapInstance && (
         <>
@@ -159,25 +166,6 @@ const Index = () => {
             showAlertMarkers={copernicusFloodEnabled}
           />
         </>
-      )}
-
-      {mapInstance && clusters.length > 0 && (
-        <ClusterPolygonLayer
-          map={mapInstance}
-          clusters={clusters}
-          onClusterClick={(cluster) => {
-            mapInstance.flyTo({ center: [cluster.center_lng, cluster.center_lat], zoom: 6, duration: 1500 });
-            if (cluster.threats?.[0]) {
-              const t = cluster.threats[0];
-              setSelectedThreat({
-                id: t.id || cluster.cluster_id, title: cluster.title, type: cluster.type,
-                severity: cluster.severity, description: cluster.description,
-                lat: cluster.center_lat, lng: cluster.center_lng, intensity: cluster.max_intensity,
-                source_artifact: t.source_artifact, data_source_run_id: t.data_source_run_id,
-              });
-            }
-          }}
-        />
       )}
 
       {weather.ready && (
@@ -194,6 +182,8 @@ const Index = () => {
           sliderMax={weather.sliderMax}
           onSliderChange={weather.onSliderChange}
           pointerValue={weather.pointerValue}
+          loading={weather.loading}
+          error={weather.error}
           imergEnabled={imergEnabled}
           onToggleIMERG={() => setImergEnabled(v => !v)}
           imergMode={imergMode}
@@ -224,11 +214,12 @@ const Index = () => {
       />
 
       <MapLegend
+        threatTypes={[...new Set(allThreats.map(threat => threat.threat_type))]}
         threatCount={allThreats.length}
-        clusterCount={clusters.length}
+        clusterCount={locationCount}
         imergEnabled={imergEnabled}
         copernicusEnabled={copernicusFloodEnabled}
-        weatherLayer={weather.activeLayer}
+        weatherLayer={weather.displayedLayer}
       />
 
       <ThreatDetailsPanel

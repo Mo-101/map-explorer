@@ -48,9 +48,6 @@ const CopernicusFloodLayer = ({ map, visible, floodAlerts, showAlertMarkers }: C
     };
 
     const addLayers = () => {
-      cleanup();
-      if (!visible) return;
-
       map.addSource(SOURCE_ID, { type: "geojson", data: geoJson });
 
       map.addLayer({
@@ -94,11 +91,16 @@ const CopernicusFloodLayer = ({ map, visible, floodAlerts, showAlertMarkers }: C
       });
     };
 
-    if (map.loaded()) addLayers();
-    else map.once("load", addLayers);
+    addLayers();
 
     return cleanup;
-  }, [map, geoJson, visible]);
+  }, [map, geoJson]);
+
+  useEffect(() => {
+    for (const id of [FILL_ID, OUTLINE_ID, LABEL_ID]) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+    }
+  }, [map, visible, geoJson]);
 
   // Automated flood alert markers for comparison
   useEffect(() => {
@@ -167,8 +169,7 @@ const CopernicusFloodLayer = ({ map, visible, floodAlerts, showAlertMarkers }: C
       });
     };
 
-    if (map.loaded()) addAlertLayers();
-    else map.once("load", addAlertLayers);
+    addAlertLayers();
 
     return cleanup;
   }, [map, floodAlerts, showAlertMarkers]);

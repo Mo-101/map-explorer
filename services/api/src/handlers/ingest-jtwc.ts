@@ -121,14 +121,14 @@ export default async function handler(req: Request): Promise<Response> {
 
     for (const pt of ioMonitorPoints) {
       try {
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${pt.lat}&longitude=${pt.lon}&hourly=wind_speed_10m,surface_pressure&forecast_days=1&wind_speed_unit=kn&timezone=UTC`;
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${pt.lat}&longitude=${pt.lon}&hourly=wind_speed_10m,pressure_msl&forecast_days=1&wind_speed_unit=kn&timezone=UTC`;
         const resp = await fetch(url);
         if (!resp.ok) { await resp.text(); continue; }
         const data: any = await resp.json();
         const hourly = data?.hourly;
         if (!hourly?.wind_speed_10m) continue;
         const maxWind = Math.max(...hourly.wind_speed_10m.filter((v: number | null) => v !== null));
-        const minPressure = Math.min(...(hourly.surface_pressure?.filter((v: number | null) => v !== null) ?? [1013]));
+        const minPressure = Math.min(...(hourly.pressure_msl?.filter((v: number | null) => v !== null) ?? [1013]));
         if (maxWind >= THRESHOLDS.tropical_storm_kt) {
           const classification = classifyStorm(maxWind);
           const gdacs = computeGdacsCycloneScore(maxWind, pt.lat, pt.lon);

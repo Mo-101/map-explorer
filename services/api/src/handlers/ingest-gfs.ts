@@ -222,7 +222,7 @@ export default async function handler(req: Request): Promise<Response> {
     const allDetections: RawDetection[] = [];
     await fetchBatch(SAMPLE_POINTS, async (pt) => {
       try {
-        const omUrl = `https://api.open-meteo.com/v1/gfs?latitude=${pt.lat}&longitude=${pt.lon}&hourly=wind_speed_10m,wind_gusts_10m,surface_pressure,precipitation&forecast_hours=72&wind_speed_unit=ms&timezone=UTC`;
+        const omUrl = `https://api.open-meteo.com/v1/gfs?latitude=${pt.lat}&longitude=${pt.lon}&hourly=wind_speed_10m,wind_gusts_10m,pressure_msl,precipitation&forecast_hours=72&wind_speed_unit=ms&timezone=UTC`;
         const omResp = await fetch(omUrl);
         if (!omResp.ok) { await omResp.text(); return; }
         const omData: any = await omResp.json();
@@ -230,7 +230,7 @@ export default async function handler(req: Request): Promise<Response> {
         if (!hourly?.time) return;
         for (let i = 0; i < hourly.time.length; i++) {
           const windSpeed = hourly.wind_speed_10m?.[i];
-          const pressure = hourly.surface_pressure?.[i];
+          const pressure = hourly.pressure_msl?.[i];
           const precip = hourly.precipitation?.[i];
           let correctedMslp: number | undefined;
           if (pressure != null) {

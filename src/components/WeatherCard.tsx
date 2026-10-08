@@ -49,7 +49,7 @@ export default function WeatherCard({
   const [data, setData] = useState<WeatherData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,7 +87,7 @@ export default function WeatherCard({
 
   return (
     <div
-      className="fixed top-20 right-4 z-30 w-72 rounded-2xl overflow-hidden neu-panel border border-white/10 shadow-2xl backdrop-blur-md transition-all"
+      className="fixed top-36 lg:top-20 right-4 z-30 w-72 rounded-2xl overflow-hidden neu-panel border border-white/10 shadow-2xl backdrop-blur-md transition-all"
       style={{ animation: "fade-in 0.4s ease-out" }}
     >
       {/* Animated background */}
@@ -141,7 +141,10 @@ export default function WeatherCard({
               </div>
             </div>
 
-            {/* Map filters relocated here to declutter the map UI */}
+
+          </>
+        )}
+            {/* Overlay controls remain available without current-weather data. */}
             {(onToggleTerrain || onToggleIMERG || onToggleCopernicusFlood) && (
               <div className="border-t border-white/15 pt-2 mt-2 space-y-1.5">
                 <div className="text-[10px] uppercase tracking-wider opacity-70">Map Filters</div>
@@ -149,6 +152,7 @@ export default function WeatherCard({
                   {onToggleTerrain && (
                     <button
                       onClick={onToggleTerrain}
+                      aria-pressed={!!terrainEnabled}
                       className={`px-2 py-1 rounded-md text-[10px] font-medium flex items-center gap-1 transition-all ${
                         terrainEnabled ? "bg-white/25 text-white" : "bg-white/10 text-white/80 hover:bg-white/20"
                       }`}
@@ -159,16 +163,18 @@ export default function WeatherCard({
                   {onToggleIMERG && (
                     <button
                       onClick={onToggleIMERG}
+                      aria-pressed={!!imergEnabled}
                       className={`px-2 py-1 rounded-md text-[10px] font-medium flex items-center gap-1 transition-all ${
                         imergEnabled ? "bg-white/25 text-white" : "bg-white/10 text-white/80 hover:bg-white/20"
                       }`}
                     >
-                      <CloudRain className="w-3 h-3" /> IMERG
+                      <CloudRain className="w-3 h-3" /> Rainfall
                     </button>
                   )}
                   {onToggleCopernicusFlood && (
                     <button
                       onClick={onToggleCopernicusFlood}
+                      aria-pressed={!!copernicusFloodEnabled}
                       className={`px-2 py-1 rounded-md text-[10px] font-medium flex items-center gap-1 transition-all ${
                         copernicusFloodEnabled ? "bg-white/25 text-white" : "bg-white/10 text-white/80 hover:bg-white/20"
                       }`}
@@ -194,8 +200,6 @@ export default function WeatherCard({
                 )}
               </div>
             )}
-          </>
-        )}
         {data && collapsed && (
           <div className="flex items-center gap-2 text-sm">
             <ConditionIcon condition={condition} />

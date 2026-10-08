@@ -180,7 +180,7 @@ serve(async (req) => {
       try {
         const url = `https://api.open-meteo.com/v1/forecast?` +
           `latitude=${pt.lat}&longitude=${pt.lon}&` +
-          `hourly=wind_speed_10m,surface_pressure&` +
+          `hourly=wind_speed_10m,pressure_msl&` +
           `forecast_days=1&wind_speed_unit=kn&timezone=UTC`;
 
         const resp = await fetch(url);
@@ -191,7 +191,7 @@ serve(async (req) => {
         if (!hourly?.wind_speed_10m) continue;
 
         const maxWind = Math.max(...hourly.wind_speed_10m.filter((v: number | null) => v !== null));
-        const minPressure = Math.min(...(hourly.surface_pressure?.filter((v: number | null) => v !== null) ?? [1013]));
+        const minPressure = Math.min(...(hourly.pressure_msl?.filter((v: number | null) => v !== null) ?? [1013]));
 
         if (maxWind >= THRESHOLDS.tropical_storm_kt) {
           const classification = classifyStorm(maxWind);

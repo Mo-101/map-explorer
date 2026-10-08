@@ -30,7 +30,9 @@
     "useDefineForClassFields": true
   },
   "exclude": [
-    "src/app/api/**"
+    "src/app/api/**",
+    "src/model-service/**",
+    "**/.venv*/**"
   ],
   "include": [
     "src"

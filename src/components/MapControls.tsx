@@ -1,9 +1,12 @@
 import { Plus, Minus, Locate, Layers } from "lucide-react";
 import MoScriptsTooltip from "@/components/MoScriptsTooltip";
+import type { Map } from "@maptiler/sdk";
+import { toast } from "sonner";
 
 interface MapControlsProps {
   zoom: number;
   coordinates: { lng: number; lat: number };
+  map?: Map | null;
 }
 
 const ControlButton = ({
@@ -24,7 +27,15 @@ const ControlButton = ({
   </button>
 );
 
-const MapControls = ({ zoom, coordinates }: MapControlsProps) => {
+const MapControls = ({ zoom, coordinates, map }: MapControlsProps) => {
+  const locate = () => {
+    if (!navigator.geolocation) return toast.error("Location is unavailable in this browser.");
+    navigator.geolocation.getCurrentPosition(
+      position => map?.flyTo({ center: [position.coords.longitude, position.coords.latitude], zoom: 8, duration: 800 }),
+      () => toast.error("Unable to access your location. You can pan to your area instead."),
+      { timeout: 10000 },
+    );
+  };
   return (
     <>
       {/* Top-left branding */}
@@ -39,7 +50,7 @@ const MapControls = ({ zoom, coordinates }: MapControlsProps) => {
             <div className="flex items-center gap-2.5 px-4 py-2.5">
               <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
               <span className="text-sm font-semibold tracking-wide text-foreground">
-                MapView
+                AFRO - STORM
               </span>
             </div>
           </div>
@@ -49,23 +60,23 @@ const MapControls = ({ zoom, coordinates }: MapControlsProps) => {
       {/* Right-side controls */}
       <div className="absolute right-5 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-2">
         <MoScriptsTooltip title="Zoom In" description="Increase map zoom level for closer inspection of threat clusters and weather patterns." position="left">
-          <ControlButton label="Zoom in">
+          <ControlButton label="Zoom in" onClick={() => map?.zoomIn({ duration: 300 })}>
             <Plus size={18} />
           </ControlButton>
         </MoScriptsTooltip>
         <MoScriptsTooltip title="Zoom Out" description="Decrease map zoom level for a wider continental overview of active threats." position="left">
-          <ControlButton label="Zoom out">
+          <ControlButton label="Zoom out" onClick={() => map?.zoomOut({ duration: 300 })}>
             <Minus size={18} />
           </ControlButton>
         </MoScriptsTooltip>
         <div className="h-2" />
         <MoScriptsTooltip title="Geolocate" description="Center the map on your current location to view nearby hazard alerts and weather conditions." position="left">
-          <ControlButton label="My location">
+          <ControlButton label="My location" onClick={locate}>
             <Locate size={18} />
           </ControlButton>
         </MoScriptsTooltip>
-        <MoScriptsTooltip title="Map Layers" description="Toggle between different base map styles and data visualization layers." position="left">
-          <ControlButton label="Layers">
+        <MoScriptsTooltip title="Map Layers" description="Choose a weather layer from the layer controls." position="left">
+          <ControlButton label="Layers" onClick={() => document.querySelector<HTMLButtonElement>('#weather-layer-controls button')?.focus()}>
             <Layers size={18} />
           </ControlButton>
         </MoScriptsTooltip>
@@ -75,12 +86,12 @@ const MapControls = ({ zoom, coordinates }: MapControlsProps) => {
       <div className="absolute bottom-5 left-5 z-10">
         <MoScriptsTooltip
           title="Map Position"
-          description={`Current center: ${coordinates.lat.toFixed(4)}°N, ${coordinates.lng.toFixed(4)}°E at zoom level ${zoom}. Coordinates update in real-time as you pan.`}
+          description={`Current center: ${Math.abs(coordinates.lat).toFixed(4)}°${coordinates.lat < 0 ? "S" : "N"}, ${Math.abs(coordinates.lng).toFixed(4)}°${coordinates.lng < 0 ? "W" : "E"} at zoom level ${zoom}.`}
           position="top"
         >
           <div className="neu-panel px-4 py-2 text-xs text-muted-foreground font-mono flex items-center gap-4">
             <span>
-              {coordinates.lat}° N, {coordinates.lng}° E
+              {Math.abs(coordinates.lat)}° {coordinates.lat < 0 ? "S" : "N"}, {Math.abs(coordinates.lng)}° {coordinates.lng < 0 ? "W" : "E"}
             </span>
             <span className="text-border">|</span>
             <span>Zoom {zoom}</span>

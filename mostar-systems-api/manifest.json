@@ -1,0 +1,15 @@
+{
+  "name": "mostar-systems-api",
+  "version": "0.1.0",
+  "canonicalLanguage": "MoScripts",
+  "canonicalOrigin": "https://api.mostarsystems.com",
+  "routes": [
+    "GET /health",
+    "GET /v1/weather/current",
+    "GET /v1/weather/wind",
+    "GET /v1/weather/forecast",
+    "GET /v1/geo/alerts",
+    "GET /v1/geo/alerts/live",
+    "GET /v1/satellite/imagery"
+  ]
+}

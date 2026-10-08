@@ -1,5 +1,12 @@
 # Welcome to your Lovable project
 
+## Map and database setup
+
+Set `VITE_MAPTILER_KEY` and the server-only `NEON_DATABASE_URL` in `.env.local`, then run `npm run dev`.
+The Vite server serves `/api/v1/health` and `/api/v1/threats` using the same read-only handlers as the Vercel deployment. No separate Python service is required for map alerts or database health. The database must already contain the `hazard_alerts` schema; health checks never seed or modify data.
+
+On Vercel, configure `NEON_DATABASE_URL` as a server environment variable and `VITE_MAPTILER_KEY` as a build environment variable. Keep `VITE_HAZARDS_API_BASE_URL` empty for same-origin requests. `VITE_API_BASE_URL` remains the separate service address for ingestion and AI features. Never expose a database connection string through a `VITE_` variable.
+
 ## Project info
 
 **URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID

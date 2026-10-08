@@ -25,50 +25,13 @@ function createWindStreakLayer(id: string) {
   });
 }
 
-export type WeatherLayerType =
-  | "wind"
-  | "wind-arrows"
-  | "precipitation"
-  | "pressure"
-  | "radar"
-  | "temperature"
-  | "wind+temperature";
-
-interface WeatherLayerConfig {
-  layer: any | null;
-  value: string;
-  units: string;
-}
-
-interface MultiLayerConfig {
-  primary: any | null;
-  background: any | null;
-  value: string;
-  units: string;
-}
-
 export function useWeatherLayers(map: maptilersdk.Map | null) {
-  const weatherLayers = useRef<Record<WeatherLayerType, WeatherLayerConfig>>({
-    precipitation: { layer: null, value: "value", units: " mm" },
-    pressure: { layer: null, value: "value", units: " hPa" },
-    radar: { layer: null, value: "value", units: " dBZ" },
-    temperature: { layer: null, value: "value", units: "°" },
-    wind: { layer: null, value: "speedMetersPerSecond", units: " m/s" },
-    "wind-arrows": { layer: null, value: "speedMetersPerSecond", units: " m/s" },
-    "wind+temperature": { layer: null, value: "speedMetersPerSecond", units: " m/s" },
-  });
-
-  const multiLayers = useRef<Record<string, MultiLayerConfig>>({
-    "wind+temperature": { 
-      primary: null, 
-      background: null, 
-      value: "speedMetersPerSecond", 
-      units: " m/s" 
-    },
-  });
-
   const [activeLayer, setActiveLayer] = useState<WeatherLayerType>("wind");
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [displayedLayer, setDisplayedLayer] = useState<WeatherLayerType | null>(null);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [timeText, setTimeText] = useState("");
   const [sliderValue, setSliderValue] = useState(0);
   const [sliderMin, setSliderMin] = useState(0);
@@ -266,176 +229,193 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
 
   const changeWeatherLayer = useCallback((type: WeatherLayerType) => {
     if (!map) return;
-    const prev = activeLayerRef.current;
-
-    if (type !== prev) {
-      if (map.getLayer(prev)) {
-        const prevLayer = weatherLayers.current[prev]?.layer;
-        if (prevLayer) {
-          currentTimeRef.current = prevLayer.getAnimationTime();
-          // Handle different layer types
-          if (prev === "wind-arrows") {
-            map.setLayoutProperty(prev, "visibility", "none");
+    const bundles = new Map<WeatherLayerType, Bundle>();
+    let selected: WeatherLayerType = "wind";
+    let displayed: WeatherLayerType | null = null;
+    let playing = true;
+    let time: number | null = null;
+    let pointer: { lng: number; lat: number } | null = null;
+    let disposed = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let lastTick = 0;
+    let lastArrows = 0;
+    let transitionFrame = 0;
+    const primary = (bundle: Bundle) => bundle.layers[bundle.layers.length - 1];
+    const refresh = () => {
+      if (!displayed || disposed) return;
+      const bundle = bundles.get(displayed)!;
+      const layer = primary(bundle);
+      const date = layer.getAnimationTimeDate();
+      if (Number.isFinite(+date)) {
+        time = +date / 1000;
+        setSliderValue(+date);
+        setTimeText(date.toLocaleString());
+      }
+      if (pointer) {
+        try {
+          const value = layer.pickAt(pointer.lng, pointer.lat);
+          if (displayed === "wind+temperature") {
+            const temp = bundle.layers[0].pickAt(pointer.lng, pointer.lat);
+            setPointerValue(value && temp ? `${temp.value.toFixed(1)}°C · ${value.speedMetersPerSecond.toFixed(1)} m/s` : "No data at this location");
           } else {
-            map.setLayoutProperty(prev, "visibility", "none");
+            const wind = displayed === "wind" || displayed === "wind-arrows";
+            const number = wind ? value?.speedMetersPerSecond : value?.value;
+            const units = wind ? " m/s" : displayed === "temperature" ? "°C" : displayed === "pressure" ? " hPa" : displayed === "radar" ? " dBZ" : " mm";
+            setPointerValue(Number.isFinite(number) ? `${number.toFixed(1)}${units}` : "No data at this location");
+          }
+        } catch { setPointerValue("No data at this location"); }
+      }
+      if (displayed === "wind-arrows" && performance.now() - lastArrows > 1000) {
+        lastArrows = performance.now();
+        updateWindArrows(map, layer);
+      }
+    };
+    const visibility = (bundle: Bundle, visible: boolean) => {
+      for (const layer of bundle.layers) {
+        if (map.getLayer(layer.id)) map.setLayoutProperty(layer.id, "visibility", visible ? "visible" : "none");
+        if (bundle.ready.has(layer.id)) layer.animateByFactor(visible && playing ? SPEED : 0);
+      }
+    };
+    const activate = (type: WeatherLayerType) => {
+      const bundle = bundles.get(type)!;
+      if (disposed || selected !== type || bundle.ready.size !== bundle.layers.length) return;
+      clearTimeout(timeout);
+      const start = Math.max(...bundle.layers.map(layer => +layer.getAnimationStartDate()));
+      const end = Math.min(...bundle.layers.map(layer => +layer.getAnimationEndDate()));
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+        setError("No forecast times are available for this layer."); setLoading(false); return;
+      }
+      const ms = Math.max(start, Math.min(end, time === null ? +primary(bundle).getAnimationTimeDate() : time * 1000));
+      for (const layer of bundle.layers) layer.setAnimationTime(ms / 1000);
+      const commit = () => {
+        for (const [name, other] of bundles) {
+          visibility(other, name === type);
+          for (const layer of other.layers) layer.setOpacity?.(1);
+        }
+        displayed = type;
+        setDisplayedLayer(type);
+        setWindArrowsVisible(map, type === "wind-arrows");
+        setSliderMin(start); setSliderMax(end); setLoading(false); setError(null);
+        refresh(); map.triggerRepaint();
+      };
+      cancelAnimationFrame(transitionFrame);
+      const previous = displayed ? bundles.get(displayed) : null;
+      if (!previous || displayed === type || !bundle.layers.every(layer => typeof layer.setOpacity === "function")) return commit();
+      for (const layer of bundle.layers) layer.setOpacity(0);
+      visibility(bundle, true);
+      let fadeStarted = 0;
+      const transition = (now: number) => {
+        if (disposed || selected !== type) return;
+        // The layer's own "sourceReady" has already fired by the time activate()
+        // runs, so the tiles are loaded. Do not gate the crossfade on pickAt():
+        // it returns null wherever the layer simply has no value at that point
+        // (dry ground for precipitation, anywhere outside radar coverage), which
+        // would strand every sparse layer behind a "no data" error.
+        fadeStarted ||= now;
+        const fraction = Math.min(1, (now - fadeStarted) / 240);
+        for (const layer of bundle.layers) layer.setOpacity(fraction);
+        for (const layer of previous.layers) layer.setOpacity?.(1 - fraction);
+        if (fraction === 1) commit();
+        else transitionFrame = requestAnimationFrame(transition);
+      };
+      transitionFrame = requestAnimationFrame(transition);
+    };
+    const select = (type: WeatherLayerType) => {
+      selected = type;
+      setActiveLayer(type); setPointerValue(""); setError(null);
+      clearTimeout(timeout);
+      cancelAnimationFrame(transitionFrame);
+      for (const [name, bundle] of bundles) {
+        visibility(bundle, name === displayed);
+        for (const layer of bundle.layers) layer.setOpacity?.(1);
+      }
+      const cached = bundles.get(type);
+      setLoading(true);
+      if (cached && cached.ready.size === cached.layers.length) return activate(type);
+      timeout = setTimeout(() => {
+        if (!disposed && selected === type) {
+          setLoading(false);
+          setError("Weather data is unavailable. Select the layer again to retry.");
+          if (cached) return;
+          const failed = bundles.get(type);
+          if (failed && displayed !== type) {
+            failed.dispose.forEach(fn => fn());
+            for (const layer of failed.layers) if (map.getLayer(layer.id)) map.removeLayer(layer.id);
+            bundles.delete(type);
           }
         }
-      }
-      
-      // Handle multi-layer cleanup
-      if (prev === "wind+temperature") {
-        const multiConfig = multiLayers.current[prev];
-        if (multiConfig.background) {
-          if (map.getLayer("temp-bg")) {
-            map.setLayoutProperty("temp-bg", "visibility", "none");
-          }
-        }
-      }
-    }
-
-    setActiveLayer(type);
-    activeLayerRef.current = type;
-
-    const weatherLayer = weatherLayers.current[type].layer || createWeatherLayer(type);
-
-    if (type === "wind-arrows") {
-      // Handle MapTiler WindArrowLayer (standard layer, no custom logic)
-      if (map.getLayer(type)) {
-        map.setLayoutProperty(type, "visibility", "visible");
-      } else {
-        map.addLayer(weatherLayer, "Water");
-      }
-      weatherLayer.animateByFactor(ANIMATION_SPEED);
-    } else if (type === "wind+temperature") {
-      // Handle multi-layer addition
-      const multiConfig = multiLayers.current[type];
-      if (multiConfig.background) {
-        if (map.getLayer("temp-bg")) {
-          map.setLayoutProperty("temp-bg", "visibility", "visible");
-        } else {
-          map.addLayer(multiConfig.background, "Water");
-        }
-      }
-      if (map.getLayer("wind-particles")) {
-        map.setLayoutProperty("wind-particles", "visibility", "visible");
-      } else {
-        map.addLayer(weatherLayer, "Water");
-      }
-      // Set animation speed for both layers
-      weatherLayer.animateByFactor(ANIMATION_SPEED);
-      multiConfig.background.animateByFactor(ANIMATION_SPEED);
-    } else {
-      // Handle standard MapTiler weather layers
-      if (map.getLayer(type)) {
-        map.setLayoutProperty(type, "visibility", "visible");
-      } else {
-        map.addLayer(weatherLayer, "Water");
-      }
-      // Set animation speed for all layers
-      weatherLayer.animateByFactor(ANIMATION_SPEED);
-    }
-    setIsPlaying(true);
-  }, [map, createWeatherLayer]);
-
-  const togglePlayPause = useCallback(() => {
-    const current = activeLayerRef.current;
-    const wl = weatherLayers.current[current]?.layer;
-    if (!wl) return;
-    
-    if (isPlaying) {
-      wl.animateByFactor(0);
-      // Handle multi-layer pause
-      if (current === "wind+temperature") {
-        const multiConfig = multiLayers.current[current];
-        if (multiConfig.background) {
-          multiConfig.background.animateByFactor(0);
-        }
-      }
-      setIsPlaying(false);
-    } else {
-      // Use consistent animation speed for all layers
-      wl.animateByFactor(ANIMATION_SPEED);
-      // Handle multi-layer play
-      if (current === "wind+temperature") {
-        const multiConfig = multiLayers.current[current];
-        if (multiConfig.background) {
-          multiConfig.background.animateByFactor(ANIMATION_SPEED);
-        }
-      }
-      setIsPlaying(true);
-    }
-  }, [isPlaying]);
-
-  const onSliderChange = useCallback((val: number) => {
-    setSliderValue(val);
-    const current = activeLayerRef.current;
-    const wl = weatherLayers.current[current]?.layer;
-    if (wl) {
-      wl.setAnimationTime(val / 1000);
-      // Handle multi-layer time sync
-      if (current === "wind+temperature") {
-        const multiConfig = multiLayers.current[current];
-        if (multiConfig.background) {
-          multiConfig.background.setAnimationTime(val / 1000);
-        }
-      }
-    }
-  }, []);
-
-  // Initialize on map load
-  useEffect(() => {
-    if (!map) return;
-
-    const onLoad = () => {
+      }, 20000);
+      if (cached) return;
+      const bundle: Bundle = { layers: createLayers(type), ready: new Set(), dispose: [] };
+      bundles.set(type, bundle);
       try {
-        // Set water color as in the example
-        map.setPaintProperty("Water", "fill-color", "rgba(0, 0, 0, 0.4)");
-      } catch {
-        // Water layer may not exist
+        // Weather stays below labels and operational indicators on every style.
+        const before = map.getStyle().layers?.find(layer => layer.type === "symbol" || /^(boundary-|threat-|hazard-|cluster-|copernicus-|imerg-)/.test(layer.id))?.id;
+        for (const layer of bundle.layers) {
+          const onReady = () => {
+            if (disposed || bundles.get(type) !== bundle) return;
+            bundle.ready.add(layer.id);
+            layer.animateByFactor(0);
+            activate(type);
+          };
+          const onTick = () => {
+            if (displayed !== type || performance.now() - lastTick < 150) return;
+            lastTick = performance.now(); refresh();
+          };
+          layer.on("sourceReady", onReady); layer.on("tick", onTick);
+          bundle.dispose.push(() => { layer.off("sourceReady", onReady); layer.off("tick", onTick); });
+          map.addLayer(layer, before);
+          map.setLayoutProperty(layer.id, "visibility", "none");
+          if (layer.getIsSourceReady?.()) onReady();
+        }
+      } catch (cause) {
+        clearTimeout(timeout);
+        bundle.dispose.forEach(fn => fn());
+        for (const layer of bundle.layers) if (map.getLayer(layer.id)) map.removeLayer(layer.id);
+        bundles.delete(type);
+        setLoading(false); setError(cause instanceof Error ? cause.message : "Unable to load weather layer");
       }
-      // Start with wind layer by default
-      changeWeatherLayer("wind");
-      setReady(true);
     };
-
-    if (map.loaded()) {
-      onLoad();
-    } else {
-      map.on("load", onLoad);
-    }
-
-    const onMouseMove = (e: any) => {
-      updatePointerValue(e.lngLat);
+    control.current = {
+      select,
+      play() {
+        playing = !playing; setIsPlaying(playing);
+        if (displayed) visibility(bundles.get(displayed)!, true);
+      },
+      seek(ms) {
+        if (!displayed) return;
+        const bundle = bundles.get(displayed)!;
+        const start = Math.max(...bundle.layers.map(layer => +layer.getAnimationStartDate()));
+        const end = Math.min(...bundle.layers.map(layer => +layer.getAnimationEndDate()));
+        time = Math.max(start, Math.min(end, ms)) / 1000;
+        for (const layer of bundle.layers) layer.setAnimationTime(time);
+        refresh();
+      },
     };
-
-    const onMouseOut = (e: any) => {
-      // Clear pointer value when mouse leaves the map
-      if (!e.originalEvent.relatedTarget) {
-        setPointerValue("");
-        pointerLngLatRef.current = null;
-      }
-    };
-
-    map.on("mousemove", onMouseMove);
-    map.on("mouseout", onMouseOut);
-
+    const init = () => { setReady(true); select("wind"); };
+    const onMove = (event: any) => { pointer = event.lngLat; refresh(); };
+    const onLeave = () => { pointer = null; setPointerValue(""); };
+    const onMoveEnd = () => { lastArrows = 0; refresh(); };
+    map.on("mousemove", onMove); map.on("mouseout", onLeave); map.on("moveend", onMoveEnd);
+    const pointerRefresh = setInterval(() => { if (displayed === "wind-arrows") refresh(); }, 1000);
+    if (map.isStyleLoaded()) init(); else map.once("load", init);
     return () => {
-      map.off("mousemove", onMouseMove);
-      map.off("mouseout", onMouseOut);
+      disposed = true; clearTimeout(timeout); control.current = null;
+      cancelAnimationFrame(transitionFrame);
+      clearInterval(pointerRefresh);
+      map.off("load", init); map.off("mousemove", onMove); map.off("mouseout", onLeave); map.off("moveend", onMoveEnd);
+      removeWindArrows(map);
+      for (const bundle of bundles.values()) {
+        bundle.dispose.forEach(fn => fn());
+        for (const layer of bundle.layers) {
+          if (bundle.ready.has(layer.id)) layer.animateByFactor(0);
+          if (map.getLayer(layer.id)) map.removeLayer(layer.id);
+        }
+      }
     };
-  }, [map, changeWeatherLayer, updatePointerValue]);
-
-  return {
-    activeLayer,
-    changeWeatherLayer,
-    isPlaying,
-    togglePlayPause,
-    timeText,
-    sliderValue,
-    sliderMin,
-    sliderMax,
-    onSliderChange,
-    pointerValue,
-    ready,
-  };
+  }, [map]);
+  const changeWeatherLayer = useCallback((type: WeatherLayerType) => control.current?.select(type), []);
+  const togglePlayPause = useCallback(() => control.current?.play(), []);
+  const onSliderChange = useCallback((ms: number) => control.current?.seek(ms), []);
+  return { activeLayer, displayedLayer, changeWeatherLayer, isPlaying, togglePlayPause, timeText, sliderValue, sliderMin, sliderMax, onSliderChange, pointerValue, ready, loading, error };
 }

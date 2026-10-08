@@ -1,0 +1,72 @@
+# Machine-readable compatibility constraints — NOT an install environment.
+#
+# Exists so nobody independently tests Phase 2B under an incompatible xarray,
+# sees mangled timedeltas or a Dataset constructor failure, and concludes the
+# GFS data is corrupt. The full CUDA/JAX lockfile belongs with the container in
+# Phase 5; this file is only the constraints we already know.
+#
+# Status values: pinned | constrained | tbd
+
+schema_version: 1
+updated: "2026-09-16"
+
+checkpoint_family:
+  name: GraphCast_operational
+  task_config: TASK_13_PRECIP_OUT
+  resolution_deg: 0.25
+  pressure_levels: 13
+  precipitation_input: false
+  precipitation_output: true
+  status: pinned
+  # Upstream ships weights under the graphcast/ namespace of the dm_graphcast
+  # bucket. Top-level copies are backward-compatibility only and may disappear;
+  # the installer must target graphcast/, not the old root layout.
+  source_namespace: "graphcast/"
+
+weathernext:
+  revision: null
+  status: tbd
+  note: >-
+    Pin an exact revision before Phase 5. Research APIs change between
+    revisions, and the checkpoint must be paired with the code that reads it.
+
+xarray:
+  max: "2026.2.0"
+  status: constrained
+  note: >-
+    2026.4.0 is reported to break GraphCast around timedelta decoding and
+    Dataset construction. Do not let the runtime resolve xarray automatically.
+
+python:
+  status: tbd
+
+jax:
+  status: tbd
+  note: Pair jaxlib with the CUDA version of the chosen GCE accelerator.
+
+jaxlib:
+  status: tbd
+
+haiku:
+  status: tbd
+
+cfgrib:
+  status: tbd
+  note: Pins eccodes; both must be fixed together for reproducible decoding.
+
+eccodes:
+  status: tbd
+
+# Recorded separately from steady-state runtime. JAX trace/compile is often
+# minutes and decides whether the worker can be ephemeral or must stay warm —
+# a queue-design question, not a machine-size one.
+benchmarks_required:
+  - worker_boot
+  - checkpoint_load
+  - jax_compile
+  - first_rollout
+  - subsequent_rollout
+  - peak_host_ram
+  - peak_accelerator_memory
+  - artifact_read_bandwidth
+  - artifact_write_bandwidth
