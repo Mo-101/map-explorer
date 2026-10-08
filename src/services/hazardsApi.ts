@@ -1,4 +1,4 @@
-import { fnUrl, authHeaders } from "./apiBase";
+import { apiFetch } from "./apiBase";
 
 // The Neon read API is hosted alongside the frontend in dev and on Vercel.
 // Other integrations can continue using their separate VITE_API_BASE_URL.
@@ -21,9 +21,8 @@ async function readHazards(path: string, allowDegraded = false) {
 }
 
 async function callEdgeFunction(fnName: string, options?: { method?: string; body?: any }) {
-  const resp = await fetch(fnUrl(fnName), {
+  const resp = await apiFetch(fnName, {
     method: options?.method || "GET",
-    headers: authHeaders(),
     ...(options?.body ? { body: JSON.stringify(options.body) } : {}),
   });
   if (!resp.ok) throw new Error(`Edge function ${fnName} returned ${resp.status}`);
@@ -31,15 +30,12 @@ async function callEdgeFunction(fnName: string, options?: { method?: string; bod
 }
 
 export async function fetchRealtimeThreats() {
-  const data = await readHazards("threats");
-  if (!Array.isArray(data?.threats)) throw new Error("Invalid threats response");
-  let page = data;
-  while (page.has_more) {
-    const offset = page.next_offset;
-    if (!Number.isSafeInteger(offset) || offset <= 0) throw new Error("Invalid alerts pagination");
-    page = await readHazards(`threats?offset=${offset}`);
-    if (!Array.isArray(page?.threats) || (page.has_more && page.next_offset <= offset)) throw new Error("Invalid alerts pagination");
-    data.threats.push(...page.threats);
+  try {
+    const data = await callEdgeFunction("neon-threats");
+    return { ...data, live: true };
+  } catch (e) {
+    console.warn("⚠️ Threats fetch failed:", e);
+    return { threats: [], clusters: [], live: false, error: String(e) };
   }
   data.count = data.threats.length;
   data.has_more = false;
