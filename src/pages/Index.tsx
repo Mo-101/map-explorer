@@ -16,6 +16,8 @@ import GdacsRiskSummary from "@/components/GdacsRiskSummary";
 import FloodComparisonPanel from "@/components/FloodComparisonPanel";
 import WeatherCard from "@/components/WeatherCard";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
+import { useEarlyWarnings } from "@/hooks/useEarlyWarnings";
+import EarlyWarningCenter from "@/components/EarlyWarningCenter";
 import { orchestrator, emit } from "@/moscripts";
 import { mo_THREAT_RENDERER } from "@/moscripts";
 import { fetchRealtimeThreats } from "@/services/hazardsApi";
@@ -53,6 +55,7 @@ const Index = () => {
   const [copernicusGeoJson, setCopernicusGeoJson] = useState<any>(null);
 
   const weather = useWeatherLayers(mapInstance);
+  const ews = useEarlyWarnings(allThreats);
 
   // Load Copernicus GeoJSON for comparison panel
   useEffect(() => {
@@ -142,6 +145,8 @@ const Index = () => {
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-background">
       <SituationalTicker mapInstance={mapInstance} onThreatSelect={handleThreatSelect} />
+      <EarlyWarningCenter map={mapInstance} alerts={ews.alerts} enso={ews.enso} updatedAt={ews.updatedAt} error={ews.error}
+        notify={ews.notify} onToggleNotify={ews.toggleNotify} onRefresh={ews.refresh} onFlyTo={handleFlyTo} />
       <MapView
         onZoomChange={setZoom}
         onCenterChange={(lng, lat) => setCoordinates({ lng, lat })}
