@@ -50,6 +50,11 @@ const WeatherControls = ({
   loading,
   error,
 }: WeatherControlsProps) => {
+  const available = sliderMax > sliderMin;
+  const progress = available ? Math.max(0, Math.min(1, (sliderValue - sliderMin) / (sliderMax - sliderMin))) : 0;
+  const shortTime = sliderValue > 0 ? new Date(sliderValue).toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+  }) : "Loading?";
   return (
     <>
       {/* Left side: vertical weather layer nav, below the stats / flood panels */}
@@ -90,37 +95,45 @@ const WeatherControls = ({
         </div>
       </div>
 
-      {/* Bottom-center: time animation bar */}
-      <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-10 w-[60vw] max-w-2xl">
-        <MoScriptsTooltip title="Weather Timeline" description="Scrub through forecast time steps or press play for animated playback." position="top">
-          <div className="neu-panel-elevated overflow-hidden">
-            <div className="neu-glow-line" />
-            <div className="flex flex-col items-center gap-2 px-5 py-4">
-              <div className="flex items-center gap-3 w-full">
-                <button
-                  onClick={onTogglePlay}
-                  className="flex items-center justify-center w-9 h-9 neu-btn-active text-primary hover:text-primary-foreground hover:bg-primary/30 transition-all"
-                  style={{ borderRadius: '10px' }}
-                  aria-label={isPlaying ? "Pause" : "Play"}
-                  disabled={sliderMax <= sliderMin}
-                >
-                  {isPlaying ? <Pause size={16} /> : <Play size={16} />}
-                </button>
+      {/* Compact forecast playback, aligned with the collapsed map controls. */}
+      <div className="absolute bottom-24 sm:bottom-14 left-1/2 -translate-x-1/2 z-20 w-56 max-w-[calc(100vw-24px)]">
+        <MoScriptsTooltip title="Weather Timeline" description={`${timeText || "Waiting for forecast times"}. Drag to seek; play advances the weather forecast.`} position="top">
+          <div className="neu-panel overflow-hidden">
+            <div className="flex h-9 items-center gap-2 px-2.5">
+              <button
+                onClick={onTogglePlay}
+                className="flex h-7 w-6 shrink-0 items-center justify-center rounded text-primary hover:bg-primary/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
+                aria-label={isPlaying ? "Pause forecast playback" : "Play forecast playback"}
+                aria-pressed={isPlaying}
+                disabled={!available}
+              >
+                {isPlaying ? <Pause size={12} /> : <Play size={12} />}
+              </button>
+              <div className="relative h-6 min-w-0 flex-1" data-playing={isPlaying && available}>
+                <div aria-hidden="true" className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-secondary">
+                  <div className="absolute inset-0 origin-left rounded-full bg-primary/70 transition-transform duration-150 ease-linear" style={{ transform: `scaleX(${progress})` }} />
+                  {isPlaying && available && (
+                    <svg className="forecast-flow absolute inset-0 h-full w-full text-primary" viewBox="0 0 100 4" preserveAspectRatio="none">
+                      <path d="M0 2 H100" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="3 9" />
+                    </svg>
+                  )}
+                </div>
                 <input
                   type="range"
-                  aria-label="Timeline"
+                  aria-label="Forecast time"
+                  aria-valuetext={timeText}
                   min={sliderMin}
                   max={sliderMax}
                   value={sliderValue}
-                  disabled={sliderMax <= sliderMin}
+                  disabled={!available}
                   step={60000}
-                  onChange={(e) => onSliderChange(Number(e.target.value))}
-                  className="flex-1 h-1.5 appearance-none rounded-full bg-secondary cursor-pointer accent-primary"
+                  onChange={e => onSliderChange(Number(e.target.value))}
+                  className="forecast-seek absolute inset-0 h-6 w-full cursor-pointer appearance-none bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default"
                 />
               </div>
-              <span className="text-[11px] font-semibold text-muted-foreground tracking-wide">
-                {timeText}
-              </span>
+              <time className="shrink-0 text-[9px] font-medium tabular-nums text-foreground/80" title={timeText}>
+                {shortTime}
+              </time>
             </div>
           </div>
         </MoScriptsTooltip>

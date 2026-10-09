@@ -313,3 +313,19 @@
 /* Hide scrollbar utility */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* The playhead follows provider time; the moving dashes indicate playback. */
+.forecast-flow path { animation: forecast-flow 1.2s linear infinite; }
+@keyframes forecast-flow { to { stroke-dashoffset: -12; } }
+.forecast-seek::-webkit-slider-runnable-track { height: 4px; background: transparent; }
+.forecast-seek::-moz-range-track { height: 4px; background: transparent; }
+.forecast-seek::-webkit-slider-thumb {
+  appearance: none; width: 8px; height: 8px; margin-top: -2px; border: 0;
+  border-radius: 50%; background: hsl(var(--primary)); box-shadow: 0 0 6px hsl(var(--primary) / .4);
+}
+.forecast-seek::-moz-range-thumb {
+  width: 8px; height: 8px; border: 0; border-radius: 50%; background: hsl(var(--primary));
+}
+@media (prefers-reduced-motion: reduce) {
+  .forecast-flow path { animation: none; }
+}
