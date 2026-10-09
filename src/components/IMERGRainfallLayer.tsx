@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type * as maptilersdk from '@maptiler/sdk';
+import { RAINFALL_POINTS } from '@/data/rainfallPoints';
 
 interface PrecipPoint {
   lat: number;

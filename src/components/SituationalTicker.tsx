@@ -3,6 +3,9 @@ import type * as maptilersdk from '@maptiler/sdk';
 import { fetchRealtimeThreats } from '@/services/hazardsApi';
 import { apiFetch } from '@/services/apiBase';
 import { useToast } from '@/hooks/use-toast';
+import { Bell, BellOff } from 'lucide-react';
+import { LEVEL_RANK, type AlertLevel, type EarlyAlert, type EnsoState } from '@/lib/warnings/engine';
+import type { EnsoContext } from '@/hooks/useEnsoContext';
 
 interface TickerItem {
   module: string;
@@ -187,6 +190,76 @@ async function fetchAISummary(threats: any[]): Promise<string | null> {
 interface SituationalTickerProps {
   mapInstance?: maptilersdk.Map | null;
   onThreatSelect?: (threat: any) => void;
+  warnings?: WarningsFeed;
+  ensoContext?: EnsoContext | null;
+}
+
+interface WarningsFeed {
+  alerts: EarlyAlert[];
+  enso: EnsoState;
+  updatedAt: number | null;
+  error: string | null;
+  notify: boolean;
+  toggleNotify: () => void;
+  skippedSites: string[];
+  staleHazardCount: number;
+}
+
+const LEVEL_SEVERITY: Record<AlertLevel, TickerItem['severity']> = { advisory: 'info', watch: 'warning', warning: 'critical', emergency: 'critical' };
+
+function minutesAgo(ts: number | null): string {
+  if (!ts) return 'not yet checked';
+  const m = Math.round((Date.now() - ts) / 60000);
+  return m < 1 ? 'updated just now' : `updated ${m} min ago`;
+}
+
+// Early-warning status, ENSO context and each alert, as ticker items.
+function buildWarningItems(w: WarningsFeed, ctx: EnsoContext | null): TickerItem[] {
+  const items: TickerItem[] = [];
+  const serious = w.alerts.filter(a => LEVEL_RANK[a.level] >= 3).length;
+  items.push({
+    module: 'EARLY WARNINGS',
+    text: `${w.alerts.length} active${serious ? ` · ${serious} warning or higher` : ''} · ${minutesAgo(w.updatedAt)}${w.error ? ` · rainfall check failed: ${w.error}` : ''}`,
+    severity: serious ? 'critical' : w.alerts.length ? 'warning' : 'info',
+  });
+  if (ctx) {
+    const o = ctx.oni;
+    const sign = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}`;
+    items.push({
+      module: 'ENSO',
+      text: `${o.phase} · ${o.strength_class} · ONI ${sign(o.value)} °C (${o.season} ${o.year})${o.rank_for_season.record ? ` · highest ${o.season} on record since 1950` : ''} · ${sign(o.change_3_months)} in 3 months${o.analogs.length ? ` · closest analogues ${o.analogs.slice(0, 2).map(a => `${a.year} (peaked ${sign(a.peak)})`).join(', ')}` : ''}`,
+      severity: o.phase === 'El Niño' ? 'warning' : 'info',
+    });
+    for (const r of ctx.regions) {
+      if (!r.in_season || !r.agreement) continue;
+      const detail = r.signals.filter(s => s.counted && s.pct_of_normal != null).map(s => `${s.name.toLowerCase()} ${s.pct_of_normal}% of normal`).join('; ');
+      items.push({
+        module: 'EL NIÑO · LOCAL',
+        text: `${r.name}, ${r.season}: ${r.agreement.consistent} of ${r.agreement.of} local signals point ${r.expected}${detail ? ` (${detail})` : ''}`,
+        severity: r.agreement.of && r.agreement.consistent === r.agreement.of ? 'warning' : 'info',
+        lat: r.id === 'east-africa' ? 1 : -19, lng: r.id === 'east-africa' ? 38.5 : 28,
+      });
+    }
+  } else if (w.enso.phase !== 'Unknown') {
+    const text = w.enso.phase === 'El Niño'
+      ? `El Niño active · ONI ${w.enso.oni?.toFixed(1)} (${w.enso.season}) · enhanced East Africa short rains more likely; alert levels still come from local rainfall`
+      : `${w.enso.phase} · ONI ${w.enso.oni?.toFixed(1)} (${w.enso.season})`;
+    items.push({ module: 'ENSO', text: w.enso.stale ? `${text} · last known reading` : text, severity: w.enso.phase === 'El Niño' ? 'warning' : 'info' });
+  }
+  for (const a of w.alerts) {
+    items.push({
+      module: a.level.toUpperCase(),
+      text: `${a.name}${a.country ? `, ${a.country}` : ''}: ${a.why} (${a.source}, confidence ${Math.round(a.confidence * 100)}%)`,
+      severity: LEVEL_SEVERITY[a.level], lat: a.lat, lng: a.lon,
+    });
+  }
+  if (w.staleHazardCount > 0) {
+    items.push({ module: 'DATA', text: `${w.staleHazardCount} hazard records older than 72h are not shown as alerts`, severity: 'info' });
+  }
+  if (w.skippedSites.length > 0) {
+    items.push({ module: 'DATA', text: `No complete rainfall data for ${w.skippedSites.join(', ')}; not evaluated`, severity: 'info' });
+  }
+  return items;
 }
 
 // Stable identity for a signal across polls. Falls back to the detection's
@@ -202,8 +275,10 @@ function signalKey(t: any, i: number): string {
   return `geo:${type}:${Number(lat).toFixed(3)}:${Number(lng).toFixed(3)}`;
 }
 
-const SituationalTicker = ({ mapInstance, onThreatSelect }: SituationalTickerProps) => {
+const SituationalTicker = ({ mapInstance, onThreatSelect, warnings, ensoContext }: SituationalTickerProps) => {
   const [items, setItems] = useState<TickerItem[]>([]);
+  const toastedWarnings = useRef<Set<string> | null>(null);
+  const toastedEnso = useRef(false);
   const seenSignalsRef = useRef<Set<string> | null>(null);
   const tickerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -305,9 +380,43 @@ const SituationalTicker = ({ mapInstance, onThreatSelect }: SituationalTickerPro
     }
   }, [mapInstance, onThreatSelect]);
 
-  if (items.length === 0) return null;
+  // Toasts for Warning/Emergency alerts: one summary for what is already active,
+  // then one per alert that appears later.
+  useEffect(() => {
+    if (!warnings?.updatedAt) return;
+    const serious = warnings.alerts.filter(a => LEVEL_RANK[a.level] >= 3);
+    const keys = new Set(serious.map(a => a.id + a.level));
+    if (toastedWarnings.current === null) {
+      if (serious.length > 0) {
+        toast({
+          title: `⚠️ ${serious.length} active early warning${serious.length > 1 ? 's' : ''}`,
+          description: `${serious[0].name}: ${serious[0].why}`,
+          variant: 'destructive',
+        });
+      }
+    } else {
+      for (const a of serious) {
+        if (toastedWarnings.current.has(a.id + a.level)) continue;
+        toast({ title: `${a.level === 'emergency' ? '🔴' : '🟠'} ${a.level.toUpperCase()}: ${a.name}`, description: a.why, variant: 'destructive' });
+      }
+    }
+    toastedWarnings.current = keys;
+  }, [warnings?.alerts, warnings?.updatedAt, toast]);
 
-  const displayItems = [...items, ...items];
+  useEffect(() => {
+    if (toastedEnso.current || warnings?.enso.phase !== 'El Niño') return;
+    toastedEnso.current = true;
+    try { if (sessionStorage.getItem('enso-toast') === warnings.enso.season) return; sessionStorage.setItem('enso-toast', warnings.enso.season ?? ''); } catch { /* storage unavailable */ }
+    toast({
+      title: `🌊 El Niño active · ONI ${warnings.enso.oni?.toFixed(1)}`,
+      description: `${warnings.enso.season}: enhanced East Africa short rains more likely. Seasonal context only; alert levels come from local rainfall.`,
+    });
+  }, [warnings?.enso, toast]);
+
+  const allItems = [...(warnings ? buildWarningItems(warnings, ensoContext ?? null) : []), ...items];
+  if (allItems.length === 0) return null;
+
+  const displayItems = [...allItems, ...allItems];
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 overflow-hidden">
@@ -335,6 +444,17 @@ const SituationalTicker = ({ mapInstance, onThreatSelect }: SituationalTickerPro
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
           </span>
+          {warnings && (
+            <button
+              onClick={warnings.toggleNotify}
+              className="ml-1 text-muted-foreground hover:text-foreground transition-colors"
+              title={warnings.notify ? 'Browser notifications on for new warnings' : 'Notify me of new warnings'}
+              aria-label={warnings.notify ? 'Turn off warning notifications' : 'Turn on warning notifications'}
+              aria-pressed={warnings.notify}
+            >
+              {warnings.notify ? <Bell size={12} /> : <BellOff size={12} />}
+            </button>
+          )}
         </div>
 
         {/* Scrolling content */}

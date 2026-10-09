@@ -4,12 +4,21 @@ import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { handleRequest as health } from "./api/v1/health";
 import { handleRequest as threats } from "./api/v1/threats";
+import { handleRequest as enso } from "./api/v1/enso";
+import { handleRequest as ensoContext } from "./api/v1/enso-context";
+
+const localRoutes: Record<string, (req: Request) => Promise<Response>> = {
+  "/api/v1/health": health,
+  "/api/v1/threats": threats,
+  "/api/v1/enso": enso,
+  "/api/v1/enso-context": ensoContext,
+};
 
 // Run the same read-only handlers as Vercel, keeping database credentials in Node.
 function localHazardsApi(): Plugin {
   const middleware = (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse, next: () => void) => {
     const url = new URL(req.url || "/", "http://localhost");
-    const handler = url.pathname === "/api/v1/health" ? health : url.pathname === "/api/v1/threats" ? threats : null;
+    const handler = localRoutes[url.pathname];
     if (!handler) return next();
     if (req.method !== "GET") {
       res.writeHead(405, { Allow: "GET" });

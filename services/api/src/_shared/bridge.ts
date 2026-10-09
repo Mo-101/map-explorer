@@ -48,7 +48,12 @@ async function sendResponse(reply: FastifyReply, resp: Response) {
 }
 
 export function mount(app: FastifyInstance, route: string, handler: WebHandler) {
-  const path = `/functions/v1/${route}`;
+  mountAt(app, `/functions/v1/${route}`, handler, ["GET", "POST", "PUT", "DELETE", "OPTIONS"]);
+}
+
+/** Mount a handler at an explicit path (used for the read-only /api/v1 routes). */
+export function mountAt(app: FastifyInstance, path: string, handler: WebHandler, methods: string[] = ["GET", "OPTIONS"]) {
+  const route = path;
   const run = async (req: FastifyRequest, reply: FastifyReply) => {
     try {
       const webReq = buildRequest(req);
@@ -60,5 +65,5 @@ export function mount(app: FastifyInstance, route: string, handler: WebHandler) 
       return reply.send({ error: e?.message || String(e) });
     }
   };
-  app.route({ method: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], url: path, handler: run });
+  app.route({ method: methods as any, url: path, handler: run });
 }

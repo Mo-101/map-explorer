@@ -1,28 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type * as maptilersdk from "@maptiler/sdk";
-import {
-  WindLayer,
-  PrecipitationLayer,
-  TemperatureLayer,
-  PressureLayer,
-  RadarLayer,
-  ColorRamp,
-} from "@maptiler/weather";
+import { WindLayer, PrecipitationLayer, TemperatureLayer, PressureLayer, RadarLayer, ColorRamp } from "@maptiler/weather";
+import { updateWindArrows, removeWindArrows, setWindArrowsVisible } from "@/lib/weatherWindArrows";
 
-// Long, bright streak particles (readable "arrows" look) built on WindLayer,
-// which is the supported way to render wind particles in @maptiler/weather.
-function createWindStreakLayer(id: string) {
-  return new WindLayer({
-    id,
-    opacity: 1,
-    colorramp: ColorRamp.builtin.NULL,
-    speed: 0.0012,
-    fadeFactor: 0.02,
-    maxAmount: 512,
-    density: 120,
-    color: [255, 255, 255, 60],
-    fastColor: [255, 245, 200, 220],
-  });
+export type WeatherLayerType = "wind" | "wind-arrows" | "precipitation" | "pressure" | "radar" | "temperature" | "wind+temperature";
+type Bundle = { layers: any[]; ready: Set<string>; dispose: (() => void)[] };
+const SPEED = 3600;
+
+function createLayers(type: WeatherLayerType): any[] {
+  switch (type) {
+    case "wind": return [new WindLayer({ id: "weather-wind", opacity: 0.85, colorramp: ColorRamp.builtin.VIRIDIS.scale(0, 40) })];
+    case "wind-arrows": return [new WindLayer({ id: "weather-arrows", opacity: 0.65, maxAmount: 1, density: 0, colorramp: ColorRamp.builtin.VIRIDIS.scale(0, 40) })];
+    case "precipitation": return [new PrecipitationLayer({ id: "weather-precipitation", opacity: 0.85, smooth: true, colorramp: ColorRamp.builtin.PRECIPITATION })];
+    case "pressure": return [new PressureLayer({ id: "weather-pressure", opacity: 0.8 })];
+    case "radar": return [new RadarLayer({ id: "weather-radar", opacity: 0.8, smooth: true, colorramp: ColorRamp.builtin.RADAR_CLOUD })];
+    case "temperature": return [new TemperatureLayer({ id: "weather-temperature", opacity: 0.85, smooth: true, colorramp: ColorRamp.builtin.TEMPERATURE_3 })];
+    case "wind+temperature": return [
+      new TemperatureLayer({ id: "weather-combined-temperature", opacity: 0.8, colorramp: ColorRamp.builtin.TEMPERATURE_3 }),
+      new WindLayer({ id: "weather-combined-wind", colorramp: ColorRamp.builtin.NULL, maxAmount: 128, density: 2, color: [255, 255, 255, 180], fastColor: [255, 255, 255, 255] }),
+    ];
+  }
 }
 
 export function useWeatherLayers(map: maptilersdk.Map | null) {
@@ -37,199 +34,13 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
   const [sliderMin, setSliderMin] = useState(0);
   const [sliderMax, setSliderMax] = useState(0);
   const [pointerValue, setPointerValue] = useState("");
-  const [ready, setReady] = useState(false);
-  const ANIMATION_SPEED = 900; // smooth, readable forecast playback
+  const control = useRef<{ select: (type: WeatherLayerType) => void; play: () => void; seek: (ms: number) => void } | null>(null);
 
-  const currentTimeRef = useRef<number | null>(null);
-  const pointerLngLatRef = useRef<{ lng: number; lat: number } | null>(null);
-  const activeLayerRef = useRef<WeatherLayerType>(activeLayer);
-
-  activeLayerRef.current = activeLayer;
-
-  const updatePointerValue = useCallback((lngLat: { lng: number; lat: number } | null) => {
-    if (!lngLat) return;
-    pointerLngLatRef.current = lngLat;
-    const current = activeLayerRef.current;
-    const config = weatherLayers.current[current];
-    
-    if (current === "wind+temperature") {
-      // Handle multi-layer pointer values
-      const multiConfig = multiLayers.current[current];
-      if (multiConfig.primary && multiConfig.background) {
-        const windValue = multiConfig.primary.pickAt(lngLat.lng, lngLat.lat);
-        const tempValue = multiConfig.background.pickAt(lngLat.lng, lngLat.lat);
-        if (!windValue || !tempValue) {
-          setPointerValue("");
-          return;
-        }
-        setPointerValue(`${tempValue.value.toFixed(1)}°C ${windValue.speedKilometersPerHour.toFixed(1)} km/h`);
-      }
-    } else if (config.layer) {
-      // Handle single layer pointer values
-      const value = config.layer.pickAt(lngLat.lng, lngLat.lat);
-      if (!value) {
-        setPointerValue("");
-        return;
-      }
-      setPointerValue(`${value[config.value].toFixed(1)}${config.units}`);
-    }
-  }, []);
-
-  const refreshTime = useCallback(() => {
-    const current = activeLayerRef.current;
-    const wl = weatherLayers.current[current]?.layer;
-    if (wl) {
-      const d = wl.getAnimationTimeDate();
-      setTimeText(d.toString());
-      setSliderValue(+d);
-    }
-  }, []);
-
-  const createWeatherLayer = useCallback((type: WeatherLayerType) => {
-    let weatherLayer: any = null;
-    let backgroundLayer: any = null;
-    
-    switch (type) {
-      case "precipitation":
-        weatherLayer = new PrecipitationLayer({
-          id: "precipitation",
-          opacity: 0.9,
-          smooth: true,
-          colorramp: ColorRamp.builtin.PRECIPITATION,
-        });
-        break;
-      case "pressure":
-        weatherLayer = new PressureLayer({
-          id: "pressure",
-          opacity: 0.8,
-        });
-        break;
-      case "radar":
-        weatherLayer = new RadarLayer({
-          id: "radar",
-          opacity: 0.8,
-          smooth: true,
-          colorramp: ColorRamp.builtin.RADAR_CLOUD,
-        });
-        break;
-      case "temperature":
-        weatherLayer = new TemperatureLayer({
-          colorramp: ColorRamp.builtin.TEMPERATURE_3,
-          opacity: 0.9,
-          smooth: true,
-          id: "temperature",
-        });
-        break;
-      case "wind":
-        weatherLayer = new WindLayer({
-          id: "wind",
-          opacity: 0.85,
-          colorramp: ColorRamp.builtin.VIRIDIS.scale(0, 30),
-          speed: 0.0009,
-          fadeFactor: 0.025,
-          maxAmount: 384,
-          density: 100,
-          color: [255, 255, 255, 45],
-          fastColor: [255, 255, 255, 180],
-        });
-        break;
-      case "wind+temperature":
-        // Create wind+temperature combination layer
-        backgroundLayer = new TemperatureLayer({
-          opacity: 0.8,
-          id: "temp-bg",
-        });
-        
-        weatherLayer = createWindStreakLayer("wind-particles");
-        
-        // Store both layers in multiLayers
-        multiLayers.current[type] = {
-          primary: weatherLayer,
-          background: backgroundLayer,
-          value: "speedMetersPerSecond",
-          units: " m/s"
-        };
-        break;
-      case "wind-arrows":
-        weatherLayer = createWindStreakLayer("wind-arrows");
-        break;
-    }
-
-    // Handle event listeners for multi-layer
-    if (type === "wind+temperature" && backgroundLayer) {
-      // Set up events for both layers
-      weatherLayer.on("tick", () => {
-        refreshTime();
-        updatePointerValue(pointerLngLatRef.current);
-      });
-
-      weatherLayer.on("animationTimeSet", () => {
-        refreshTime();
-      });
-
-      weatherLayer.on("sourceReady", () => {
-        const startDate = weatherLayer.getAnimationStartDate();
-        const endDate = weatherLayer.getAnimationEndDate();
-        const currentDate = weatherLayer.getAnimationTimeDate();
-        
-        
-        if (sliderMin > 0 && currentTimeRef.current !== null) {
-          weatherLayer.setAnimationTime(currentTimeRef.current);
-          backgroundLayer.setAnimationTime(currentTimeRef.current);
-        } else {
-          const currentDate = weatherLayer.getAnimationTimeDate();
-          setSliderMin(+startDate);
-          setSliderMax(+endDate);
-          setSliderValue(+currentDate);
-        }
-        // Auto-play as soon as data is ready
-        weatherLayer.animateByFactor(ANIMATION_SPEED);
-        backgroundLayer.animateByFactor(ANIMATION_SPEED);
-        setIsPlaying(true);
-        refreshTime();
-      });
-
-      weatherLayers.current[type].layer = weatherLayer;
-      return weatherLayer;
-    }
-
-    // Handle single layer events
-    weatherLayer.on("tick", () => {
-      refreshTime();
-      updatePointerValue(pointerLngLatRef.current);
-    });
-
-    weatherLayer.on("animationTimeSet", () => {
-      refreshTime();
-    });
-
-    weatherLayer.on("sourceReady", () => {
-      const startDate = weatherLayer.getAnimationStartDate();
-      const endDate = weatherLayer.getAnimationEndDate();
-      const currentDate = weatherLayer.getAnimationTimeDate();
-      
-      
-      if (sliderMin > 0 && currentTimeRef.current !== null) {
-        weatherLayer.setAnimationTime(currentTimeRef.current);
-      } else {
-        const currentDate = weatherLayer.getAnimationTimeDate();
-        setSliderMin(+startDate);
-        setSliderMax(+endDate);
-        setSliderValue(+currentDate);
-      }
-      // Auto-play as soon as data is ready
-      weatherLayer.animateByFactor(ANIMATION_SPEED);
-      setIsPlaying(true);
-      refreshTime();
-    });
-
-    weatherLayers.current[type].layer = weatherLayer;
-    return weatherLayer;
-  }, [refreshTime, updatePointerValue, sliderMin]);
-
-  const changeWeatherLayer = useCallback((type: WeatherLayerType) => {
+  // One lifetime per map: timeline updates must not recreate layers or listeners.
+  useEffect(() => {
     if (!map) return;
     const bundles = new Map<WeatherLayerType, Bundle>();
+    const retried = new Set<WeatherLayerType>();
     let selected: WeatherLayerType = "wind";
     let displayed: WeatherLayerType | null = null;
     let playing = true;
@@ -334,15 +145,16 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
       if (cached && cached.ready.size === cached.layers.length) return activate(type);
       timeout = setTimeout(() => {
         if (!disposed && selected === type) {
-          setLoading(false);
-          setError("Weather data is unavailable. Select the layer again to retry.");
-          if (cached) return;
           const failed = bundles.get(type);
-          if (failed && displayed !== type) {
+          if (!cached && failed && displayed !== type) {
             failed.dispose.forEach(fn => fn());
             for (const layer of failed.layers) if (map.getLayer(layer.id)) map.removeLayer(layer.id);
             bundles.delete(type);
+            // Rebuild once automatically before telling the user.
+            if (!retried.has(type)) { retried.add(type); return select(type); }
           }
+          setLoading(false);
+          setError("Weather data is unavailable. Select the layer again to retry.");
         }
       }, 20000);
       if (cached) return;
@@ -355,6 +167,7 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
           const onReady = () => {
             if (disposed || bundles.get(type) !== bundle) return;
             bundle.ready.add(layer.id);
+            retried.delete(type);
             layer.animateByFactor(0);
             activate(type);
           };
@@ -392,18 +205,27 @@ export function useWeatherLayers(map: maptilersdk.Map | null) {
         refresh();
       },
     };
-    const init = () => { setReady(true); select("wind"); };
+    // MapView hands the map over from its "load" handler, so "load" has already
+    // fired, and the pulsing hazard markers repaint every frame so "idle" never
+    // fires either. Start on the first render where the style is fully loaded.
+    let started = false;
+    const init = () => {
+      if (started || !map.isStyleLoaded()) return;
+      started = true; map.off("render", init);
+      setReady(true); select("wind");
+    };
     const onMove = (event: any) => { pointer = event.lngLat; refresh(); };
     const onLeave = () => { pointer = null; setPointerValue(""); };
     const onMoveEnd = () => { lastArrows = 0; refresh(); };
     map.on("mousemove", onMove); map.on("mouseout", onLeave); map.on("moveend", onMoveEnd);
     const pointerRefresh = setInterval(() => { if (displayed === "wind-arrows") refresh(); }, 1000);
-    if (map.isStyleLoaded()) init(); else map.once("load", init);
+    map.on("render", init);
+    init();
     return () => {
       disposed = true; clearTimeout(timeout); control.current = null;
       cancelAnimationFrame(transitionFrame);
       clearInterval(pointerRefresh);
-      map.off("load", init); map.off("mousemove", onMove); map.off("mouseout", onLeave); map.off("moveend", onMoveEnd);
+      map.off("render", init); map.off("mousemove", onMove); map.off("mouseout", onLeave); map.off("moveend", onMoveEnd);
       removeWindArrows(map);
       for (const bundle of bundles.values()) {
         bundle.dispose.forEach(fn => fn());

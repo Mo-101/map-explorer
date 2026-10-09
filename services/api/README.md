@@ -20,8 +20,6 @@ Route table mirrors the old Supabase URL shape, so the frontend only needs the
 | `*    /functions/v1/ingest-who-don`          | `ingest-who-don` edge fn          | POST     |
 | `*    /functions/v1/ingest-firms`            | `ingest-firms` edge fn            | POST     |
 | `*    /functions/v1/ingest-reliefweb`        | `ingest-reliefweb` edge fn        | POST     |
-| `*    /functions/v1/ingest-gpm`              | `ingest-gpm` edge fn              | POST     |
-| `*    /functions/v1/ingest-gfs`              | `ingest-gfs` edge fn              | POST     |
 | `*    /functions/v1/ingest-jtwc`             | `ingest-jtwc` edge fn             | POST     |
 
 ## Local dev
@@ -69,8 +67,6 @@ host crontab that POSTs to the ingest endpoints, e.g.:
 */30 * * * * root curl -fsS -X POST https://api.mostarindustries.com/functions/v1/ingest-usgs  >/dev/null
 0    */1 * * * root curl -fsS -X POST https://api.mostarindustries.com/functions/v1/ingest-firms >/dev/null
 0    */6 * * * root curl -fsS -X POST https://api.mostarindustries.com/functions/v1/ingest-who-don >/dev/null
-0    */6 * * * root curl -fsS -X POST https://api.mostarindustries.com/functions/v1/ingest-gfs >/dev/null
-30   */1 * * * root curl -fsS -X POST https://api.mostarindustries.com/functions/v1/ingest-gpm >/dev/null
 0    */3 * * * root curl -fsS -X POST https://api.mostarindustries.com/functions/v1/ingest-jtwc >/dev/null
 0    */12 * * * root curl -fsS -X POST https://api.mostarindustries.com/functions/v1/ingest-reliefweb >/dev/null
 ```

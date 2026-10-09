@@ -99,13 +99,14 @@ function buildAnalysisFromThreats(threats: any[]): AnalysisData {
   if (threats.length === 0) {
     analysis.push({
       module: 'Status',
-      text: 'No active hazard signals above threshold. All monitoring points within normal parameters. Ingestion pipelines operational.',
+      text: 'No active hazard alerts in the connected feeds.',
       timestamp: now,
-      tags: ['clear', 'nominal'],
+      tags: ['clear'],
     });
   }
 
-  const artifactSources = ['GFS Forecast (NOAA)', 'GPM IMERG (NASA)', 'JTWC Advisories'];
+  // Only the feeds that actually contributed the alerts above.
+  const artifactSources = [...new Set(threats.map(t => t.detection_details?.source_name || t.source).filter(Boolean))] as string[];
 
   return {
     mode: 'analysis',

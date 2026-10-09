@@ -1,7 +1,5 @@
 import { neon } from "@neondatabase/serverless";
 import { corsHeaders } from "../_shared/cors.js";
-import countryVuln from "../_shared/country_vulnerability.json" with { type: "json" };
-import { getCountryName } from "../_shared/geo_utils.js";
 
 const SOURCE = "usgs";
 const AFRICA_BOUNDS = { minLat: -35, maxLat: 37, minLon: -20, maxLon: 52 };
@@ -18,15 +16,7 @@ function mapMagnitudeToSeverity(mag: number): string {
   return "low";
 }
 
-function computeGdacsEqScore(mag: number, depthKm: number, country: string | null) {
-  const vuln = (countryVuln as Record<string, { inform_lcc: number }>)[country ?? ""]?.inform_lcc ?? 0.6;
-  const rawScore = -7.75 + 0.82 * mag - 0.53 * Math.log10(Math.max(depthKm, 1));
-  const gdacsScore = rawScore * vuln;
-  let gdacsLevel = "green";
-  if (gdacsScore >= 2) gdacsLevel = "red";
-  else if (gdacsScore >= 1) gdacsLevel = "orange";
-  return { score: +gdacsScore.toFixed(3), level: gdacsLevel, raw_score: +rawScore.toFixed(3), vulnerability: vuln, country };
-}
+const PAGER_SEVERITY: Record<string, string> = { red: "extreme", orange: "high", yellow: "moderate", green: "low" };
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -79,13 +69,13 @@ export default async function handler(req: Request): Promise<Response> {
       const mag = props.mag || 0;
       const externalId = `usgs_${feature.id || props.code || props.ids}`;
       const title = props.title || props.place || "USGS Earthquake";
-      const severity = mapMagnitudeToSeverity(mag);
-      const eventTime = props.time ? new Date(props.time).toISOString() : new Date().toISOString();
-      const country = getCountryName(lat, lon);
-      const gdacs = computeGdacsEqScore(mag, depth, country);
-      const effectiveSeverity = gdacs.level === "red" && severity !== "extreme" ? "high" : severity;
+      // USGS PAGER impact alert when issued; magnitude class otherwise.
+      const effectiveSeverity = PAGER_SEVERITY[props.alert] ?? mapMagnitudeToSeverity(mag);
+      const eventTime = props.time ? new Date(props.time).toISOString() : null;
       const metadata = { magnitude: mag, depth_km: depth, place: props.place, event_time: eventTime,
-        tsunami: props.tsunami, felt: props.felt, cdi: props.cdi, mmi: props.mmi, alert: props.alert, url: props.url, gdacs };
+        tsunami: props.tsunami, felt: props.felt, cdi: props.cdi, mmi: props.mmi,
+        pager_alert: props.alert ?? null, severity_basis: props.alert ? "USGS PAGER alert" : "magnitude class",
+        report_url: props.url, source_name: "USGS Earthquake Hazards Program" };
 
       await sql`
         INSERT INTO hazard_alerts (
@@ -94,7 +84,7 @@ export default async function handler(req: Request): Promise<Response> {
           metadata, created_at, updated_at
         ) VALUES (
           ${SOURCE}, ${externalId}, 'earthquake', ${effectiveSeverity}, ${title.slice(0, 500)},
-          ${`M${mag} earthquake - ${props.place || 'Unknown location'} (depth: ${depth}km) | GDACS: ${gdacs.level} (${gdacs.score})`},
+          ${`M${mag} earthquake - ${props.place || 'Unknown location'} (depth: ${depth}km)${props.alert ? ` | USGS PAGER: ${props.alert}` : ""}`},
           ${lat}, ${lon}, true, ${runId}, NOW(),
           ${JSON.stringify(metadata)}::jsonb, NOW(), NOW()
         )

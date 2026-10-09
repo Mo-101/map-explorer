@@ -162,6 +162,74 @@ function drawBiohazard(ctx: CanvasRenderingContext2D, cx: number, cy: number, r:
   }
 }
 
+/**
+ * Draw a flame (for wildfires)
+ */
+function drawFlame(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string) {
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r * 1.35);
+  ctx.bezierCurveTo(cx + r * 0.35, cy - r * 0.7, cx + r * 1.05, cy - r * 0.2, cx + r * 0.75, cy + r * 0.55);
+  ctx.bezierCurveTo(cx + r * 0.55, cy + r * 1.1, cx - r * 0.55, cy + r * 1.1, cx - r * 0.75, cy + r * 0.55);
+  ctx.bezierCurveTo(cx - r * 1.0, cy - r * 0.05, cx - r * 0.45, cy - r * 0.35, cx - r * 0.25, cy - r * 0.85);
+  ctx.bezierCurveTo(cx - r * 0.05, cy - r * 0.45, cx + r * 0.05, cy - r * 0.9, cx, cy - r * 1.35);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(cx, cy - r * 1.3, cx, cy + r);
+  grad.addColorStop(0, lighten(color, 45));
+  grad.addColorStop(1, darken(color, 15));
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // Inner flame
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r * 0.2);
+  ctx.bezierCurveTo(cx + r * 0.45, cy + r * 0.2, cx + r * 0.3, cy + r * 0.8, cx, cy + r * 0.8);
+  ctx.bezierCurveTo(cx - r * 0.3, cy + r * 0.8, cx - r * 0.45, cy + r * 0.2, cx, cy - r * 0.2);
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.fill();
+}
+
+/**
+ * Draw a sun with rays (for drought)
+ */
+function drawSun(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI) / 4;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * r * 0.85, cy + Math.sin(a) * r * 0.85);
+    ctx.lineTo(cx + Math.cos(a) * r * 1.3, cy + Math.sin(a) * r * 1.3);
+    ctx.stroke();
+  }
+  const grad = ctx.createRadialGradient(cx - r * 0.15, cy - r * 0.15, r * 0.05, cx, cy, r * 0.7);
+  grad.addColorStop(0, lighten(color, 50));
+  grad.addColorStop(1, color);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.65, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+/**
+ * Draw a diamond with a seismic trace (for earthquakes)
+ */
+function drawQuake(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string) {
+  drawDiamond(ctx, cx, cy, r, color);
+  ctx.beginPath();
+  const pts = [[-0.6, 0], [-0.3, 0], [-0.15, -0.45], [0.05, 0.45], [0.2, -0.25], [0.32, 0], [0.6, 0]];
+  pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(cx + x * r, cy + y * r) : ctx.lineTo(cx + x * r, cy + y * r)));
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 1.8;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+}
+
 function lighten(hex: string, pct: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -202,6 +270,15 @@ function buildThreatIcon(type: string, color: string, pixelSize: number): HTMLCa
       break;
     case 'landslide':
       drawDiamond(ctx, cx, cy, r, color);
+      break;
+    case 'earthquake':
+      drawQuake(ctx, cx, cy, r, color);
+      break;
+    case 'wildfire':
+      drawFlame(ctx, cx, cy, r, color);
+      break;
+    case 'drought':
+      drawSun(ctx, cx, cy, r, color);
       break;
     case 'outbreak':
     case 'cholera':
@@ -738,7 +815,7 @@ export const mo_THREAT_RENDERER: MoScript<ThreatRendererInputs, ThreatRendererRe
     });
     
     result.totalRendered = renderThreatIndicators(mapInstance, visibleThreats, buildThreatIcon);
-    result.layersCreated = result.totalRendered ? ["hazard-location-globes"] : [];
+    result.layersCreated = result.totalRendered ? ["hazard-icons"] : [];
     result.executionTime = Date.now() - startTime;
     return result;
   },

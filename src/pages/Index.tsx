@@ -17,7 +17,9 @@ import FloodComparisonPanel from "@/components/FloodComparisonPanel";
 import WeatherCard from "@/components/WeatherCard";
 import { useWeatherLayers } from "@/hooks/useWeatherLayers";
 import { useEarlyWarnings } from "@/hooks/useEarlyWarnings";
+import { useEnsoContext } from "@/hooks/useEnsoContext";
 import EarlyWarningCenter from "@/components/EarlyWarningCenter";
+import ElNinoLayer from "@/components/ElNinoLayer";
 import { orchestrator, emit } from "@/moscripts";
 import { mo_THREAT_RENDERER } from "@/moscripts";
 import { fetchRealtimeThreats } from "@/services/hazardsApi";
@@ -56,6 +58,7 @@ const Index = () => {
 
   const weather = useWeatherLayers(mapInstance);
   const ews = useEarlyWarnings(allThreats);
+  const ensoContext = useEnsoContext();
 
   // Load Copernicus GeoJSON for comparison panel
   useEffect(() => {
@@ -144,9 +147,9 @@ const Index = () => {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-background">
-      <SituationalTicker mapInstance={mapInstance} onThreatSelect={handleThreatSelect} />
-      <EarlyWarningCenter map={mapInstance} alerts={ews.alerts} enso={ews.enso} updatedAt={ews.updatedAt} error={ews.error}
-        notify={ews.notify} onToggleNotify={ews.toggleNotify} onRefresh={ews.refresh} onFlyTo={handleFlyTo} />
+      <SituationalTicker mapInstance={mapInstance} onThreatSelect={handleThreatSelect} warnings={ews} ensoContext={ensoContext} />
+      <EarlyWarningCenter map={mapInstance} alerts={ews.alerts} />
+      <ElNinoLayer map={mapInstance} enso={ews.enso} context={ensoContext} />
       <MapView
         onZoomChange={setZoom}
         onCenterChange={(lng, lat) => setCoordinates({ lng, lat })}
@@ -220,6 +223,8 @@ const Index = () => {
         imergEnabled={imergEnabled}
         copernicusEnabled={copernicusFloodEnabled}
         weatherLayer={weather.displayedLayer}
+        warningLevels={[...new Set(ews.alerts.map(alert => alert.level))]}
+        enso={ews.enso}
       />
 
       <ThreatDetailsPanel

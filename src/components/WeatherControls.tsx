@@ -52,21 +52,21 @@ const WeatherControls = ({
 }: WeatherControlsProps) => {
   return (
     <>
-      {/* Top-center: horizontal weather layer nav, between MapView badge and BackendStatus badge */}
-      <div id="weather-layer-controls" className="absolute top-20 lg:top-5 left-1/2 -translate-x-1/2 z-20 w-max max-w-[calc(100vw-24px)] lg:max-w-[calc(100vw-440px)]">
+      {/* Left side: vertical weather layer nav, below the stats / flood panels */}
+      <div id="weather-layer-controls" className="absolute left-3 lg:left-5 top-1/2 -translate-y-1/2 z-20 w-40 max-h-[calc(100vh-200px)]">
         <div className="neu-panel-elevated overflow-hidden">
           <div className="neu-glow-line" />
-          <div className="flex items-center gap-1 px-2 py-1.5 overflow-x-auto no-scrollbar">
+          <div className="flex flex-col gap-1 px-2 py-2 overflow-y-auto no-scrollbar">
             {LAYER_OPTIONS.map((opt) => {
               const Icon = opt.Icon;
               const active = activeLayer === opt.id;
               return (
-                <MoScriptsTooltip key={opt.id} title={opt.label} description={opt.tip} position="bottom">
+                <MoScriptsTooltip key={opt.id} title={opt.label} description={opt.tip} position="right">
                   <button
                     onClick={() => onChangeLayer(opt.id)}
                     aria-pressed={active}
                     aria-label={opt.label}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-200 shrink-0 ${
+                    className={`w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium rounded-md transition-all duration-200 shrink-0 ${
                       active
                         ? "neu-btn-active text-primary"
                         : "neu-btn text-foreground/80 hover:text-foreground"
@@ -79,7 +79,7 @@ const WeatherControls = ({
               );
             })}
             {pointerValue && (
-              <span className="ml-2 px-2 text-[11px] font-bold text-foreground/90 border-l border-border shrink-0">
+              <span className="mt-1 pt-1.5 px-1 text-[11px] font-bold text-foreground/90 border-t border-border">
                 {pointerValue}
               </span>
             )}

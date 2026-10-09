@@ -4,7 +4,7 @@ import { ChevronDown, ChevronUp, Eye } from "lucide-react";
 interface LegendEntry {
   color: string;
   label: string;
-  shape: "circle" | "line" | "fill" | "droplet" | "spiral" | "diamond" | "biohazard";
+  shape: "circle" | "line" | "fill" | "droplet" | "spiral" | "diamond" | "biohazard" | "flame" | "sun" | "quake" | "elnino" | "ring";
   active?: boolean;
 }
 
@@ -15,6 +15,8 @@ interface MapLegendProps {
   imergEnabled: boolean;
   copernicusEnabled: boolean;
   weatherLayer: string | null;
+  warningLevels: string[];
+  enso?: { phase: string; oni: number | null };
 }
 
 const THREAT_TYPES: LegendEntry[] = [
@@ -24,9 +26,16 @@ const THREAT_TYPES: LegendEntry[] = [
   { color: "#ec4899", label: "Outbreak", shape: "biohazard" },
   { color: "#8b5cf6", label: "Convergence", shape: "circle" },
   { color: "#ef4444", label: "Storm", shape: "spiral" },
-  { color: "#f97316", label: "Earthquake", shape: "diamond" },
-  { color: "#eab308", label: "Drought", shape: "circle" },
-  { color: "#f97316", label: "Wildfire", shape: "circle" },
+  { color: "#a16207", label: "Earthquake", shape: "quake" },
+  { color: "#eab308", label: "Drought", shape: "sun" },
+  { color: "#f97316", label: "Wildfire", shape: "flame" },
+];
+
+const WARNING_LEVELS: LegendEntry[] = [
+  { color: "#38bdf8", label: "Advisory", shape: "ring" },
+  { color: "#facc15", label: "Watch", shape: "ring" },
+  { color: "#fb923c", label: "Warning", shape: "ring" },
+  { color: "#ef4444", label: "Emergency", shape: "ring" },
 ];
 
 const ShapeIcon = ({ shape, color }: { shape: string; color: string }) => {
@@ -79,6 +88,51 @@ const ShapeIcon = ({ shape, color }: { shape: string; color: string }) => {
       </svg>
     );
   }
+  if (shape === "flame") {
+    return (
+      <svg width="14" height="18" viewBox="0 0 14 18">
+        <path d="M7 1 C8 4 13 6.5 12 11.5 C11.3 15.5 2.7 15.5 2 11.5 C1.3 8 4 6.5 5 4 C5.8 6 6.3 4.5 7 1Z" fill={color} stroke="rgba(255,255,255,0.75)" strokeWidth="1" />
+        <path d="M7 8 C9 10 8.6 13.5 7 13.5 C5.4 13.5 5 10 7 8Z" fill="rgba(255,255,255,0.55)" />
+      </svg>
+    );
+  }
+  if (shape === "sun") {
+    return (
+      <svg width="18" height="18" viewBox="0 0 18 18">
+        {Array.from({ length: 8 }, (_, i) => {
+          const a = (i * Math.PI) / 4;
+          return <line key={i} x1={9 + Math.cos(a) * 5.6} y1={9 + Math.sin(a) * 5.6} x2={9 + Math.cos(a) * 8} y2={9 + Math.sin(a) * 8} stroke={color} strokeWidth="1.5" strokeLinecap="round" />;
+        })}
+        <circle cx="9" cy="9" r="4.4" fill={color} stroke="rgba(255,255,255,0.75)" strokeWidth="1" />
+      </svg>
+    );
+  }
+  if (shape === "quake") {
+    return (
+      <svg width="14" height="18" viewBox="0 0 14 18">
+        <path d="M7 1 L13 9 L7 17 L1 9 Z" fill={color} stroke="rgba(255,255,255,0.7)" strokeWidth="1" />
+        <path d="M3 9 H5 L6 6 L7.6 12 L8.6 7.5 L9.4 9 H11" fill="none" stroke="white" strokeWidth="1" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (shape === "elnino") {
+    return (
+      <svg width="18" height="18" viewBox="0 0 18 18">
+        <circle cx="9" cy="9" r="8" fill={color} stroke="white" strokeWidth="1.2" />
+        <circle cx="11.5" cy="6" r="2" fill="#fef08a" />
+        <path d="M3 10.5 Q4.75 8.5 6.5 10.5 T10 10.5 T13.5 10.5 T15 10" fill="none" stroke="white" strokeWidth="1.3" />
+        <path d="M3.5 13.2 Q5 11.6 6.5 13.2 T9.5 13.2 T12.5 13.2 T14.5 13" fill="none" stroke="white" strokeWidth="1.2" />
+      </svg>
+    );
+  }
+  if (shape === "ring") {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" r="6.5" fill={`${color}40`} stroke={color} strokeWidth="1.6" />
+        <circle cx="8" cy="8" r="2" fill={color} stroke="#000" strokeWidth="0.6" />
+      </svg>
+    );
+  }
   if (shape === "line") {
     return <div className="w-4 h-0.5 rounded-full" style={{ background: color }} />;
   }
@@ -102,11 +156,17 @@ const MapLegend = ({
   imergEnabled,
   copernicusEnabled,
   weatherLayer,
+  warningLevels,
+  enso,
 }: MapLegendProps) => {
   const [expanded, setExpanded] = useState(false);
 
   const overlays: LegendEntry[] = [];
-  if (imergEnabled) overlays.push({ color: "#06b6d4", label: "Rainfall ? Open-Meteo", shape: "circle", active: true });
+  if (enso?.phase === "El Niño" && enso.oni != null) {
+    overlays.push({ color: "#f97316", label: `El Niño · ONI ${enso.oni >= 0 ? "+" : ""}${enso.oni.toFixed(1)} (seasonal)`, shape: "elnino", active: true });
+    overlays.push({ color: "#f97316", label: "Niño 3.4 region (Pacific)", shape: "fill", active: true });
+  }
+  if (imergEnabled) overlays.push({ color: "#06b6d4", label: "Rainfall · Open-Meteo model", shape: "circle", active: true });
   if (copernicusEnabled) overlays.push({ color: "#3b82f6", label: "EMS Flood Zones", shape: "fill", active: true });
   if (weatherLayer) overlays.push({ color: "#8b5cf6", label: `Weather: ${weatherLayer}`, shape: "fill", active: true });
 
@@ -154,15 +214,19 @@ const MapLegend = ({
               </div>
             </div>
 
-            {/* Clusters */}
-            {clusterCount > 0 && (
+            {/* Early-warning rings */}
+            {warningLevels.length > 0 && (
               <div>
-                <div className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1">
-                  Clusters
+                <div className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1.5">
+                  Early Warnings
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3.5 h-3.5 rounded-full border" style={{ borderColor: "rgba(251,146,60,0.5)", background: "rgba(251,146,60,0.1)" }} />
-                  <span className="text-[9px] text-muted-foreground">{clusterCount} alert locations</span>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                  {WARNING_LEVELS.filter(entry => warningLevels.includes(entry.label.toLowerCase())).map((entry) => (
+                    <div key={entry.label} className="flex items-center gap-1.5">
+                      <ShapeIcon shape={entry.shape} color={entry.color} />
+                      <span className="text-[9px] text-muted-foreground">{entry.label}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -184,9 +248,7 @@ const MapLegend = ({
               </div>
             )}
 
-            <p className="text-[9px] text-muted-foreground">Colors inside each globe show the signals together. Click to inspect every alert.</p>
-
-            <p className="text-[9px] text-muted-foreground">Open an alert for severity and source details.</p>
+            <p className="text-[9px] text-muted-foreground">Icon size reflects severity. Click any icon for its source, dates and report.</p>
           </div>
         )}
       </div>

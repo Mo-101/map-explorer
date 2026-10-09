@@ -1,173 +1,122 @@
 import { neon } from "@neondatabase/serverless";
 import { corsHeaders } from "../_shared/cors.js";
-import countryVuln from "../_shared/country_vulnerability.json" with { type: "json" };
-import { getCountryName, getSaffirSimpsonCategory } from "../_shared/geo_utils.js";
 
-const THRESHOLDS = {
-  tropical_depression_kt: 20,
-  tropical_storm_kt: 34,
-  hurricane_cat1_kt: 64,
-  hurricane_cat3_kt: 96,
-  hurricane_cat5_kt: 137,
-};
+// Joint Typhoon Warning Center tropical cyclone warnings for the basins that
+// reach Africa: Southern Hemisphere (sh, i.e. the South-West Indian Ocean) and
+// North Indian Ocean (io, the Arabian Sea / Horn of Africa side). Positions,
+// winds and forecast track are parsed from JTWC's official warning text.
+const SOURCE = "jtwc";
+const RSS_URL = "https://www.metoc.navy.mil/jtwc/rss/jtwc.rss";
+const AFRICAN_BASINS = new Set(["sh", "io"]);
+// Western part of each basin, where systems can affect Africa and its islands.
+const MAX_LON_BY_BASIN: Record<string, number> = { sh: 90, io: 75 };
 
-function classifyStorm(windKt: number): { severity: string; category: string } {
-  if (windKt >= THRESHOLDS.hurricane_cat5_kt) return { severity: "extreme", category: "CAT5" };
-  if (windKt >= THRESHOLDS.hurricane_cat3_kt) return { severity: "extreme", category: "CAT3+" };
-  if (windKt >= THRESHOLDS.hurricane_cat1_kt) return { severity: "high", category: "CAT1+" };
-  if (windKt >= THRESHOLDS.tropical_storm_kt) return { severity: "moderate", category: "TS" };
-  if (windKt >= THRESHOLDS.tropical_depression_kt) return { severity: "low", category: "TD" };
-  return { severity: "low", category: "INVEST" };
+// RSMC La Réunion (official SWIO centre) intensity scale, 10-min winds in kt.
+// JTWC reports 1-min winds, so these categories are indicative, as labelled.
+function classify(windKt: number): { category: string; severity: string } {
+  if (windKt >= 116) return { category: "Very intense tropical cyclone", severity: "extreme" };
+  if (windKt >= 90) return { category: "Intense tropical cyclone", severity: "extreme" };
+  if (windKt >= 64) return { category: "Tropical cyclone", severity: "high" };
+  if (windKt >= 48) return { category: "Severe tropical storm", severity: "moderate" };
+  if (windKt >= 34) return { category: "Moderate tropical storm", severity: "moderate" };
+  return { category: "Tropical depression", severity: "low" };
 }
 
-function computeGdacsCycloneScore(windKt: number, lat: number, lon: number) {
-  const category = getSaffirSimpsonCategory(windKt);
-  const country = getCountryName(lat, lon);
-  const vuln = (countryVuln as Record<string, { inform_lcc: number }>)[country ?? ""]?.inform_lcc ?? 0.6;
-  const isCoastal = (lon >= 30 && lon <= 55 && lat >= -30 && lat <= 15) ||
-                    (lon >= -20 && lon <= 15 && lat >= -10 && lat <= 20);
-  const exposureClass = isCoastal ? "high" : "medium";
-  let gdacsLevel = "green";
-  if (category >= 3 && exposureClass !== "low") gdacsLevel = "red";
-  else if (category >= 1 && exposureClass === "high") gdacsLevel = "red";
-  else if (category >= 1) gdacsLevel = "orange";
-  else if (windKt >= THRESHOLDS.tropical_storm_kt) gdacsLevel = "orange";
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+}
+
+const coord = (value: string, hemi: string) => Number(value) * (hemi === "S" || hemi === "W" ? -1 : 1);
+const POSIT = /(\d{6})Z\s*---\s*(?:NEAR\s+)?(\d+(?:\.\d+)?)([NS])\s+(\d+(?:\.\d+)?)([EW])/;
+
+export interface JtwcWarning {
+  stormId: string; name: string; warningNumber: string; issued: string;
+  lat: number; lon: number; windKt: number; gustKt: number | null;
+  track: { valid: string; lat: number; lon: number; windKt: number | null }[];
+}
+
+export function parseWarning(stormId: string, text: string): JtwcWarning | null {
+  const subject = text.match(/SUBJ\/(.+?)\s+WARNING NR\s+(\d+)/);
+  const current = text.split(/WARNING POSITION:/)[1];
+  if (!subject || !current) return null;
+  const pos = current.match(POSIT);
+  const wind = current.match(/MAX SUSTAINED WINDS - (\d+) KT(?:, GUSTS (\d+) KT)?/);
+  if (!pos || !wind) return null;
+  const track: JtwcWarning["track"] = [];
+  const forecasts = text.split(/FORECASTS:/)[1] ?? "";
+  for (const block of forecasts.split(/\n\s*---/)) {
+    const p = block.match(POSIT);
+    if (!p) continue;
+    const w = block.match(/MAX SUSTAINED WINDS - (\d+) KT/);
+    track.push({ valid: p[1], lat: coord(p[2], p[3]), lon: coord(p[4], p[5]), windKt: w ? Number(w[1]) : null });
+  }
   return {
-    level: gdacsLevel, category,
-    saffir_simpson: category > 0 ? `CAT${category}` : windKt >= 34 ? "TS" : "TD",
-    wind_kt: windKt, exposure_class: exposureClass, vulnerability: vuln, country,
+    stormId, name: subject[1].trim(), warningNumber: subject[2], issued: pos[1],
+    lat: coord(pos[2], pos[3]), lon: coord(pos[4], pos[5]),
+    windKt: Number(wind[1]), gustKt: wind[2] ? Number(wind[2]) : null, track,
   };
 }
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-
   const neonUrl = process.env.NEON_DATABASE_URL;
-  if (!neonUrl) {
-    return new Response(JSON.stringify({ error: "missing NEON_DATABASE_URL", hazards_found: 0 }),
-      { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-  }
+  if (!neonUrl) return json({ error: "missing NEON_DATABASE_URL" }, 503);
+
+  const sql = neon(neonUrl);
+  const runId = `jtwc_${new Date().toISOString().slice(0, 16).replace(/[-T:]/g, "")}`;
+  const headers = { "User-Agent": "Mozilla/5.0 (AFRO-STORM hazard monitor)" };
 
   try {
-    const sql = neon(neonUrl);
-    const now = new Date();
-    const runId = `jtwc_${now.toISOString().slice(0, 13).replace(/[-T:]/g, "")}`;
+    // Fetch first: if JTWC is unreachable, existing alerts are left untouched.
+    const rssResp = await fetch(RSS_URL, { headers, signal: AbortSignal.timeout(30000) });
+    if (!rssResp.ok) throw new Error(`JTWC RSS returned ${rssResp.status}`);
+    const rss = await rssResp.text();
+    const links = [...new Set([...rss.matchAll(/https?:\/\/[^'"\s<>]+\/products\/([a-z]{2})(\d{4})web\.txt/g)]
+      .filter(m => AFRICAN_BASINS.has(m[1])).map(m => m[0]))];
 
-    await sql`UPDATE hazard_alerts SET is_active = false, updated_at = NOW()
-      WHERE source = 'jtwc' AND is_active = true
-        AND data_source_run_id IS NOT NULL AND data_source_run_id != ${runId}`;
-    await sql`UPDATE hazard_alerts SET is_active = false, updated_at = NOW()
-      WHERE source = 'jtwc' AND is_active = true
-        AND last_seen_at < NOW() - INTERVAL '72 hours'`;
-
-    const existing = await sql`SELECT COUNT(*)::int AS count FROM hazard_alerts
-      WHERE source = 'jtwc' AND data_source_run_id = ${runId}` as any[];
-    if (existing[0]?.count > 0) {
-      return new Response(JSON.stringify({ status: "completed_cleanup", reason: "run already ingested", run_id: runId }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const warnings: JtwcWarning[] = [];
+    for (const link of links) {
+      const id = link.match(/products\/([a-z]{2}\d{4})web\.txt/)![1];
+      const resp = await fetch(link, { headers, signal: AbortSignal.timeout(30000) });
+      if (!resp.ok) throw new Error(`JTWC warning ${id} returned ${resp.status}`);
+      const warning = parseWarning(id, await resp.text());
+      if (!warning) throw new Error(`JTWC warning ${id} could not be parsed`);
+      if (warning.lon <= MAX_LON_BY_BASIN[id.slice(0, 2)]) warnings.push(warning);
     }
 
-    const runArtifact = {
-      source: "jtwc_advisories", run_id: runId,
-      basins_monitored: ["IO", "SI", "SP", "AL", "WP"],
-      thresholds: THRESHOLDS, ingested_at: now.toISOString(),
-    };
-
-    const allHazards: any[] = [];
-
-    try {
-      const rssResp = await fetch("https://www.nhc.noaa.gov/index-at.xml", {
-        headers: { "User-Agent": "MoStar-HazardMonitor/1.0" },
-      });
-      if (rssResp.ok) {
-        const rssText = await rssResp.text();
-        const itemRegex = /<item>[\s\S]*?<title>(.*?)<\/title>[\s\S]*?<description>(.*?)<\/description>[\s\S]*?<\/item>/g;
-        let match;
-        while ((match = itemRegex.exec(rssText)) !== null) {
-          const title = match[1];
-          const desc = match[2];
-          const latMatch = desc.match(/(\d+\.?\d*)\s*([NS])/i);
-          const lonMatch = desc.match(/(\d+\.?\d*)\s*([EW])/i);
-          const windMatch = desc.match(/(\d+)\s*(?:kt|knots|mph)/i);
-          if (latMatch && lonMatch) {
-            const lat = parseFloat(latMatch[1]) * (latMatch[2].toUpperCase() === "S" ? -1 : 1);
-            const lon = parseFloat(lonMatch[1]) * (lonMatch[2].toUpperCase() === "W" ? -1 : 1);
-            const windKt = windMatch ? parseInt(windMatch[1]) : 35;
-            const classification = classifyStorm(windKt);
-            const gdacs = computeGdacsCycloneScore(windKt, lat, lon);
-            allHazards.push({
-              external_id: `${runId}_nhc_${title.slice(0, 30).replace(/\s+/g, "_")}`,
-              source: "jtwc", type: "cyclone",
-              severity: gdacs.level === "red" ? "extreme" : classification.severity,
-              title: `${classification.category}: ${title.slice(0, 60)}`,
-              description: `NHC Advisory: ${desc.slice(0, 200).replace(/<[^>]*>/g, "")} | GDACS: ${gdacs.level}`,
-              lat, lng: lon, intensity: windKt, data_source_run_id: runId, forecast_hour: null,
-              source_artifact: { advisory_source: "nhc", storm_title: title, wind_kt: windKt,
-                category: classification.category, raw_description: desc.slice(0, 500), gdacs },
-            });
-          }
-        }
-      }
-    } catch (nhcErr) { console.log("NHC fetch error:", nhcErr); }
-
-    const ioMonitorPoints = [
-      { lat: -12.0, lon: 55.0, name: "SW Indian Ocean" },
-      { lat: -15.0, lon: 65.0, name: "Central Indian Ocean" },
-      { lat: -8.0, lon: 80.0, name: "Eastern Indian Ocean" },
-      { lat: 15.0, lon: 55.0, name: "Arabian Sea" },
-      { lat: 12.0, lon: 85.0, name: "Bay of Bengal" },
-      { lat: -20.0, lon: 50.0, name: "Mozambique Channel" },
-    ];
-
-    for (const pt of ioMonitorPoints) {
-      try {
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${pt.lat}&longitude=${pt.lon}&hourly=wind_speed_10m,pressure_msl&forecast_days=1&wind_speed_unit=kn&timezone=UTC`;
-        const resp = await fetch(url);
-        if (!resp.ok) { await resp.text(); continue; }
-        const data: any = await resp.json();
-        const hourly = data?.hourly;
-        if (!hourly?.wind_speed_10m) continue;
-        const maxWind = Math.max(...hourly.wind_speed_10m.filter((v: number | null) => v !== null));
-        const minPressure = Math.min(...(hourly.pressure_msl?.filter((v: number | null) => v !== null) ?? [1013]));
-        if (maxWind >= THRESHOLDS.tropical_storm_kt) {
-          const classification = classifyStorm(maxWind);
-          const gdacs = computeGdacsCycloneScore(maxWind, pt.lat, pt.lon);
-          allHazards.push({
-            external_id: `${runId}_io_${pt.lat}_${pt.lon}`,
-            source: "jtwc", type: "cyclone",
-            severity: gdacs.level === "red" ? "extreme" : classification.severity,
-            title: `${classification.category} activity — ${pt.name}`,
-            description: `Tropical cyclone signal: ${maxWind.toFixed(0)} kt winds, ${minPressure.toFixed(0)} hPa at ${pt.name} | GDACS: ${gdacs.level}`,
-            lat: pt.lat, lng: pt.lon, intensity: maxWind, data_source_run_id: runId, forecast_hour: null,
-            source_artifact: { advisory_source: "open_meteo_io_monitor", location: pt.name,
-              max_wind_kt: maxWind, min_pressure_hpa: minPressure, category: classification.category,
-              thresholds: THRESHOLDS, gdacs },
-          });
-        }
-      } catch (ptErr) { console.log(`IO monitor error for ${pt.name}:`, ptErr); }
-    }
-
-    let upserted = 0;
-    for (const h of allHazards) {
+    for (const w of warnings) {
+      const { category, severity } = classify(w.windKt);
+      const metadata = {
+        storm_id: w.stormId, warning_number: w.warningNumber, issued: `${w.issued}Z`,
+        max_sustained_wind_kt_1min: w.windKt, gust_kt: w.gustKt, category,
+        category_scale: "RSMC La Réunion SWIO scale (indicative: JTWC winds are 1-min averages)",
+        forecast_track: w.track,
+        report_url: `https://www.metoc.navy.mil/jtwc/products/${w.stormId}web.txt`,
+        source_name: "Joint Typhoon Warning Center (JTWC)",
+      };
       await sql`
-        INSERT INTO hazard_alerts (external_id, source, type, severity, title, description, lat, lng, event_at, intensity, metadata, is_active, data_source_run_id, forecast_hour, source_artifact)
-        VALUES (${h.external_id}, ${h.source}, ${h.type}, ${h.severity}, ${h.title}, ${h.description}, ${h.lat}, ${h.lng}, NOW(), ${h.intensity}, ${JSON.stringify(h.source_artifact)}::jsonb, TRUE, ${h.data_source_run_id}, ${h.forecast_hour}, ${JSON.stringify({ ...runArtifact, point_artifact: h.source_artifact })}::jsonb)
+        INSERT INTO hazard_alerts (external_id, source, type, severity, title, description, lat, lng, event_at, intensity,
+          metadata, source_artifact, is_active, data_source_run_id, last_seen_at)
+        VALUES (${`jtwc_${w.stormId}`}, ${SOURCE}, 'cyclone', ${severity}, ${`${w.name} (${category})`},
+          ${`JTWC warning ${w.warningNumber}: max sustained winds ${w.windKt} kt${w.gustKt ? `, gusts ${w.gustKt} kt` : ""} near ${Math.abs(w.lat)}°${w.lat < 0 ? "S" : "N"} ${Math.abs(w.lon)}°${w.lon < 0 ? "W" : "E"}. ${w.track.length} forecast positions.`},
+          ${w.lat}, ${w.lon}, NOW(), ${w.windKt}, ${JSON.stringify(metadata)}::jsonb, ${JSON.stringify({ rss: RSS_URL, storm_id: w.stormId })}::jsonb,
+          TRUE, ${runId}, NOW())
         ON CONFLICT (source, external_id) DO UPDATE SET
           severity = EXCLUDED.severity, title = EXCLUDED.title, description = EXCLUDED.description,
-          intensity = EXCLUDED.intensity, metadata = EXCLUDED.metadata, source_artifact = EXCLUDED.source_artifact,
-          is_active = TRUE, last_seen_at = NOW(), updated_at = NOW()`;
-      upserted++;
+          lat = EXCLUDED.lat, lng = EXCLUDED.lng, intensity = EXCLUDED.intensity, metadata = EXCLUDED.metadata,
+          source_artifact = EXCLUDED.source_artifact, is_active = TRUE, data_source_run_id = EXCLUDED.data_source_run_id,
+          last_seen_at = NOW(), updated_at = NOW()`;
     }
 
-    return new Response(JSON.stringify({
-      status: "completed", source: "jtwc_composite", run_id: runId,
-      nhc_scanned: true, io_points_scanned: ioMonitorPoints.length,
-      hazards_detected: allHazards.length, hazards_upserted: upserted,
-      thresholds: THRESHOLDS, run_artifact: runArtifact,
-      timestamp: new Date().toISOString(),
-    }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // Storms JTWC no longer issues warnings for are no longer active.
+    const deactivated = await sql`
+      UPDATE hazard_alerts SET is_active = false, updated_at = NOW()
+      WHERE source = ${SOURCE} AND is_active = true AND data_source_run_id IS DISTINCT FROM ${runId}
+      RETURNING id` as any[];
+
+    return json({ status: "ok", run_id: runId, african_basin_warnings: links.length, active_storms: warnings.length,
+      deactivated: deactivated.length, storms: warnings.map(w => `${w.name} ${w.windKt}kt`) });
   } catch (e: any) {
-    return new Response(JSON.stringify({ error: e?.message || String(e), hazards_found: 0 }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return json({ error: e?.message || String(e) }, 502);
   }
 }

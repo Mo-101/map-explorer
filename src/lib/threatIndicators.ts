@@ -1,122 +1,143 @@
 import maplibregl, { type Map, type GeoJSONSource } from "maplibre-gl";
-import { groupThreatLocations, type ThreatLocation } from "./threatLocations";
 
 const SOURCE = "hazard-indicators";
-const GLOBES = "hazard-location-globes";
-const PREFIX = "hazard-globe:";
+const ICONS = "hazard-icons";
+const PREFIX = "hazard-icon:";
 const TYPES = ["cyclone", "storm", "flood", "landslide", "earthquake", "outbreak", "cholera", "convergence", "drought", "wildfire", "other"];
-const COLORS: Record<string, string> = { cyclone: "#ef4444", storm: "#ef4444", flood: "#3b82f6", landslide: "#f97316", earthquake: "#f97316", outbreak: "#ec4899", cholera: "#ec4899", convergence: "#8b5cf6", drought: "#eab308", wildfire: "#f97316", other: "#94a3b8" };
-type State = { locations: globalThis.Map<string, ThreatLocation>; drawIcon: (type: string, color: string, size: number) => HTMLCanvasElement };
+export const HAZARD_COLORS: Record<string, string> = { cyclone: "#ef4444", storm: "#ef4444", flood: "#3b82f6", landslide: "#f97316", earthquake: "#a16207", outbreak: "#ec4899", cholera: "#ec4899", convergence: "#8b5cf6", drought: "#eab308", wildfire: "#f97316", other: "#94a3b8" };
+const SEVERITY_SCALE: Record<string, number> = { extreme: 1, high: 0.85, moderate: 0.72, medium: 0.72, low: 0.62 };
+const ICON_PX = 44;
+// Events reported at exactly the same point are fanned out by this many pixels.
+const FAN_PX = 22;
+
+type DrawIcon = (type: string, color: string, size: number) => HTMLCanvasElement;
+type State = { threats: globalThis.Map<string, any>; drawIcon: DrawIcon };
 const states = new WeakMap<Map, State>();
 const normalizedType = (type: string) => TYPES.includes(type) ? type : "other";
 
-function globeImage(types: string[], count: number, drawIcon: State["drawIcon"]) {
-  const canvas = document.createElement("canvas"); canvas.width = canvas.height = 112;
+function iconImage(type: string, drawIcon: DrawIcon) {
+  const canvas = drawIcon(type, HAZARD_COLORS[type], ICON_PX);
   const ctx = canvas.getContext("2d")!;
-  ctx.beginPath(); ctx.arc(56, 56, 53, 0, Math.PI * 2); ctx.clip();
-  const gradient = ctx.createRadialGradient(34, 27, 2, 56, 56, 62);
-  gradient.addColorStop(0, "#426a80"); gradient.addColorStop(0.5, "#163c52"); gradient.addColorStop(1, "#081d2b");
-  ctx.fillStyle = gradient; ctx.fillRect(0, 0, 112, 112);
-  ctx.strokeStyle = "rgba(180,220,240,0.22)"; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.ellipse(56, 56, 24, 52, 0, 0, Math.PI * 2); ctx.stroke();
-  ctx.beginPath(); ctx.ellipse(56, 56, 52, 17, 0, 0, Math.PI * 2); ctx.stroke();
-  const shown = types.length ? types : ["other"];
-  shown.forEach((type, i) => {
-    const start = -Math.PI / 2 + i * Math.PI * 2 / shown.length;
-    ctx.beginPath(); ctx.arc(56, 56, 49, start + 0.03, start + Math.PI * 2 / shown.length - 0.03);
-    ctx.strokeStyle = COLORS[type]; ctx.lineWidth = 5; ctx.stroke();
-    const angle = start + Math.PI / shown.length;
-    const radius = shown.length === 1 ? 0 : 26;
-    const size = shown.length <= 2 ? 39 : shown.length <= 4 ? 30 : 22;
-    const icon = drawIcon(type, COLORS[type], size);
-    ctx.drawImage(icon, 56 + Math.cos(angle) * radius - size / 2, 49 + Math.sin(angle) * radius - size / 2, size, size);
-  });
-  if (count > 1) {
-    ctx.fillStyle = "#edf6ff"; ctx.font = "bold 23px system-ui"; ctx.textAlign = "center";
-    ctx.fillText(String(count), 56, 96);
-  }
-  return ctx.getImageData(0, 0, 112, 112);
+  return { image: ctx.getImageData(0, 0, canvas.width, canvas.height), pixelRatio: canvas.width / ICON_PX };
 }
 
-/** Compact globes retain each co-located signal; nearby locations cluster only at distant zooms. */
-export function renderThreatIndicators(map: Map, threats: any[], drawIcon: State["drawIcon"]) {
-  const locations = groupThreatLocations(threats);
-  const count = locations.reduce((sum, location) => sum + location.threats.length, 0);
+const fmtDate = (value: unknown) => {
+  const t = Date.parse(String(value ?? ""));
+  return Number.isFinite(t) ? new Date(t).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : null;
+};
+
+/** One detection, every field the feed supplied, nothing inferred. */
+function detailContent(threat: any): HTMLElement {
+  const d = threat.detection_details ?? {};
+  const g = d.gdacs ?? {};
+  const color = HAZARD_COLORS[normalizedType(threat.threat_type)];
+  const root = document.createElement("div");
+  root.style.cssText = "padding:12px 14px;color:#152a36;max-width:340px;font:12px/1.45 system-ui,sans-serif";
+
+  const title = document.createElement("div");
+  title.style.cssText = `font-weight:700;font-size:14px;color:${color};margin-bottom:2px`;
+  title.textContent = threat.title || `${threat.threat_type} event`;
+  root.append(title);
+
+  const badge = document.createElement("div");
+  badge.style.cssText = "text-transform:uppercase;letter-spacing:.04em;font-size:10px;font-weight:600;color:#4b5f6b;margin-bottom:8px";
+  badge.textContent = `${threat.threat_type} · ${threat.severity || "unknown severity"}${g.alertlevel ? ` · GDACS ${g.alertlevel} alert` : ""}`;
+  root.append(badge);
+
+  const rows: [string, string | null][] = [
+    ["Issued by", d.source_name || threat.source || null],
+    ["Period", [fmtDate(d.from_date ?? threat.timestamp), fmtDate(d.to_date)].filter(Boolean).join(" → ") || null],
+    ["Countries", Array.isArray(d.countries) && d.countries.length ? d.countries.join(", ") : null],
+    ["Severity", g.severity_text || (d.max_sustained_wind_kt_1min ? `${d.max_sustained_wind_kt_1min} kt sustained${d.gust_kt ? `, gusts ${d.gust_kt} kt` : ""}` : null)],
+    ["Category", d.category || null],
+    ["Alert score", g.alertscore != null ? String(g.alertscore) : null],
+    ["Episode", g.episodeid != null ? `${g.episodeid}${g.episodealertlevel ? ` (${g.episodealertlevel})` : ""}` : null],
+    ["GLIDE", g.glide || null],
+    ["Magnitude", d.magnitude != null ? `M${d.magnitude}${d.depth_km != null ? `, depth ${d.depth_km} km` : ""}` : null],
+    ["Location", `${Number(threat.center_lat).toFixed(2)}, ${Number(threat.center_lng).toFixed(2)}`],
+    ["Last confirmed", fmtDate(threat.last_seen_at)],
+  ];
+  const table = document.createElement("div");
+  table.style.cssText = "display:grid;grid-template-columns:auto 1fr;gap:3px 10px";
+  for (const [label, value] of rows) {
+    if (!value) continue;
+    const k = document.createElement("span"); k.style.color = "#6b7c86"; k.textContent = label;
+    const v = document.createElement("span"); v.textContent = value;
+    table.append(k, v);
+  }
+  root.append(table);
+
+  if (threat.description && threat.description !== threat.title) {
+    const desc = document.createElement("p");
+    desc.style.cssText = "margin:8px 0 0;color:#2c4350";
+    desc.textContent = threat.description;
+    root.append(desc);
+  }
+  const link = d.report_url;
+  if (typeof link === "string" && /^https?:\/\//.test(link)) {
+    const a = document.createElement("a");
+    a.href = link; a.target = "_blank"; a.rel = "noopener noreferrer";
+    a.style.cssText = "display:inline-block;margin-top:8px;color:#17618a;text-decoration:underline";
+    a.textContent = "Official report ↗";
+    root.append(a);
+  }
+  return root;
+}
+
+/** One icon per detection: no grouping, no clustering, no container. */
+export function renderThreatIndicators(map: Map, threats: any[], drawIcon: DrawIcon) {
   let state = states.get(map);
-  if (!state && !locations.length) return 0;
+  if (!state && !threats.length) return 0;
   if (!state) {
-    state = { locations: new globalThis.Map(), drawIcon };
+    state = { threats: new globalThis.Map(), drawIcon };
     states.set(map, state);
     let popup: maplibregl.Popup | undefined;
     const missing = (event: { id: string }) => {
       if (!event.id.startsWith(PREFIX) || map.hasImage(event.id)) return;
-      const [signature, total] = event.id.slice(PREFIX.length).split(":");
-      const types = signature.split(".").filter(type => TYPES.includes(type));
-      map.addImage(event.id, globeImage(types, Number(total), states.get(map)!.drawIcon), { pixelRatio: 2 });
+      const { image, pixelRatio } = iconImage(event.id.slice(PREFIX.length), states.get(map)!.drawIcon);
+      map.addImage(event.id, image, { pixelRatio });
     };
-    const click = async (event: any) => {
+    const click = (event: any) => {
       const feature = event.features?.[0];
-      if (!feature) return;
-      const source = map.getSource(SOURCE) as GeoJSONSource;
-      const leaves = feature.properties.cluster ? await source.getClusterLeaves(feature.properties.cluster_id, 1000, 0) : [feature];
-      const groups = leaves.map(leaf => states.get(map)?.locations.get(String(leaf.properties?.id))).filter(Boolean) as ThreatLocation[];
-      const alerts = groups.flatMap(group => group.threats);
-      if (!alerts.length) return;
-      const content = document.createElement("div");
-      content.style.cssText = "padding:12px;color:#152a36;max-width:320px;max-height:320px;overflow:auto";
-      const heading = document.createElement("strong");
-      heading.textContent = `${alerts.length} alert${alerts.length === 1 ? "" : "s"} · ${groups.length === 1 ? "one location" : `${groups.length} locations`}`;
-      content.append(heading);
-      if (feature.properties.cluster) {
-        const zoom = document.createElement("button"); zoom.textContent = "Zoom to locations";
-        zoom.style.cssText = "display:block;margin:8px 0;color:#17618a;text-decoration:underline";
-        zoom.onclick = async () => {
-          const level = await source.getClusterExpansionZoom(feature.properties.cluster_id);
-          map.easeTo({ center: feature.geometry.coordinates, zoom: level, duration: 600 }); popup?.remove();
-        };
-        content.append(zoom);
-      }
-      for (const threat of alerts) {
-        const detail = document.createElement("details"); detail.style.marginTop = "8px"; detail.open = alerts.length <= 2;
-        const summary = document.createElement("summary");
-        summary.style.color = COLORS[normalizedType(threat.threat_type)];
-        summary.textContent = `${threat.threat_type} · ${threat.severity || "unknown"} · ${threat.title || "Alert"}`;
-        detail.append(summary);
-        for (const text of [threat.description, `Coordinates: ${threat.center_lat ?? threat.latitude}, ${threat.center_lng ?? threat.longitude}`, threat.data_source_run_id ? `Run: ${threat.data_source_run_id}` : null, threat.timestamp ? new Date(threat.timestamp).toLocaleString() : null]) {
-          if (!text) continue;
-          const line = document.createElement("div"); line.textContent = text; detail.append(line);
-        }
-        content.append(detail);
-      }
+      const threat = feature && states.get(map)?.threats.get(String(feature.properties.id));
+      if (!threat) return;
       popup?.remove();
-      popup = new maplibregl.Popup({ maxWidth: "350px" }).setLngLat(feature.geometry.coordinates).setDOMContent(content).addTo(map);
+      popup = new maplibregl.Popup({ maxWidth: "360px" }).setLngLat(feature.geometry.coordinates).setDOMContent(detailContent(threat)).addTo(map);
     };
     const enter = () => { map.getCanvas().style.cursor = "pointer"; };
     const leave = () => { map.getCanvas().style.cursor = ""; };
     map.on("styleimagemissing", missing);
-    map.on("click", GLOBES, click); map.on("mouseenter", GLOBES, enter); map.on("mouseleave", GLOBES, leave);
+    map.on("click", ICONS, click); map.on("mouseenter", ICONS, enter); map.on("mouseleave", ICONS, leave);
     map.once("remove", () => { popup?.remove(); states.delete(map); });
   }
-  state.locations = new globalThis.Map(locations.map(location => [location.id, location]));
   state.drawIcon = drawIcon;
-  const features: GeoJSON.Feature[] = locations.map(location => {
-    const types = location.threats.map(threat => normalizedType(threat.threat_type));
-    const signature = (types.length <= 4 ? types : [...new Set(types)]).sort().join(".");
-    return { type: "Feature", geometry: { type: "Point", coordinates: [location.lng, location.lat] }, properties: {
-      id: location.id, alert_count: location.threats.length, signature,
-      ...Object.fromEntries(TYPES.map(type => [type, types.filter(value => value === type).length])),
-    } };
-  });
+  state.threats = new globalThis.Map(threats.map(t => [String(t.id), t]));
+
+  const atPoint = new globalThis.Map<string, number>();
+  const features: GeoJSON.Feature[] = threats
+    .filter(t => Number.isFinite(Number(t.center_lat)) && Number.isFinite(Number(t.center_lng)))
+    .map(t => {
+      const lat = Number(t.center_lat), lng = Number(t.center_lng);
+      const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+      const k = atPoint.get(key) ?? 0;
+      atPoint.set(key, k + 1);
+      const angle = k * 2.39996; // golden angle keeps fanned icons apart
+      const offset = k === 0 ? [0, 0] : [Math.cos(angle) * FAN_PX * Math.sqrt(k), Math.sin(angle) * FAN_PX * Math.sqrt(k)];
+      const type = normalizedType(String(t.threat_type ?? "").toLowerCase());
+      return { type: "Feature", geometry: { type: "Point", coordinates: [lng, lat] }, properties: {
+        id: String(t.id), icon: PREFIX + type, scale: SEVERITY_SCALE[String(t.severity).toLowerCase()] ?? 0.7, offset,
+      } };
+    });
+
   const data: GeoJSON.FeatureCollection = { type: "FeatureCollection", features };
   const source = map.getSource(SOURCE) as GeoJSONSource | undefined;
   if (source) source.setData(data);
-  else map.addSource(SOURCE, { type: "geojson", data, cluster: true, clusterRadius: 60, clusterMaxZoom: 18,
-    clusterProperties: Object.fromEntries(["alert_count", ...TYPES].map(type => [type, ["+", ["get", type]]])),
-  });
-  if (!map.getLayer(GLOBES)) map.addLayer({ id: GLOBES, type: "symbol", source: SOURCE, layout: {
-    "icon-image": ["concat", PREFIX, ["case", ["has", "point_count"], ["concat", ...TYPES.map(type => ["case", [">", ["get", type], 0], `${type}.`, ""])], ["get", "signature"]], ":", ["to-string", ["get", "alert_count"]]] as any,
-    "icon-size": ["case", [">", ["get", "alert_count"], 1], 0.9, 0.65],
+  else map.addSource(SOURCE, { type: "geojson", data });
+  if (!map.getLayer(ICONS)) map.addLayer({ id: ICONS, type: "symbol", source: SOURCE, layout: {
+    "icon-image": ["get", "icon"],
+    "icon-size": ["get", "scale"],
+    "icon-offset": ["get", "offset"],
     "icon-allow-overlap": true, "icon-ignore-placement": true,
-  } });
-  return count;
+  } as any });
+  return features.length;
 }

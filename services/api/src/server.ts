@@ -1,7 +1,7 @@
 import "./_shared/deno-shim.js";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { mount } from "./_shared/bridge.js";
+import { mount, mountAt } from "./_shared/bridge.js";
 
 import neonHealth from "./handlers/neon-health.js";
 import neonThreats from "./handlers/neon-threats.js";
@@ -14,9 +14,9 @@ import ingestUsgs from "./handlers/ingest-usgs.js";
 import ingestWhoDon from "./handlers/ingest-who-don.js";
 import ingestFirms from "./handlers/ingest-firms.js";
 import ingestReliefweb from "./handlers/ingest-reliefweb.js";
-import ingestGpm from "./handlers/ingest-gpm.js";
-import ingestGfs from "./handlers/ingest-gfs.js";
 import ingestJtwc from "./handlers/ingest-jtwc.js";
+import noaaEnso from "./handlers/noaa-enso.js";
+import ensoContext from "./handlers/enso-context.js";
 
 const app = Fastify({
   logger: { level: process.env.LOG_LEVEL ?? "info" },
@@ -43,7 +43,8 @@ app.get("/health", async () => ({
     "neon-health","neon-threats","smoke-test","whisper-query",
     "ai-analyze","ai-situational-summary",
     "ingest-gdacs","ingest-usgs","ingest-who-don","ingest-firms",
-    "ingest-reliefweb","ingest-gpm","ingest-gfs","ingest-jtwc",
+    "ingest-reliefweb","ingest-jtwc",
+    "noaa-enso","enso-context",
   ],
 }));
 
@@ -58,11 +59,19 @@ mount(app, "ingest-usgs", ingestUsgs);
 mount(app, "ingest-who-don", ingestWhoDon);
 mount(app, "ingest-firms", ingestFirms);
 mount(app, "ingest-reliefweb", ingestReliefweb);
-mount(app, "ingest-gpm", ingestGpm);
-mount(app, "ingest-gfs", ingestGfs);
 mount(app, "ingest-jtwc", ingestJtwc);
+mount(app, "noaa-enso", noaaEnso);
+mount(app, "enso-context", ensoContext);
+
+// Read-only routes the map app calls (same paths as the Vite dev server and Vercel).
+mountAt(app, "/api/v1/health", smokeTest);
+mountAt(app, "/api/v1/threats", neonThreats);
+mountAt(app, "/api/v1/enso", noaaEnso);
+mountAt(app, "/api/v1/enso-context", ensoContext);
 
 const port = Number(process.env.PORT ?? 8080);
-app.listen({ host: "0.0.0.0", port })
+// HOST=127.0.0.1 behind a reverse proxy, so the API is not reachable directly.
+const host = process.env.HOST ?? "0.0.0.0";
+app.listen({ host, port })
   .then(() => app.log.info(`mostar-api listening on :${port}`))
   .catch((e) => { app.log.error(e); process.exit(1); });

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchRealtimeThreats, fetchBackendHealth } from "./hazardsApi";
+import { fetchRealtimeThreats, fetchBackendHealth, clearThreatsCache } from "./hazardsApi";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); clearThreatsCache(); });
 
 describe("Neon read API", () => {
   it("loads threats and clusters from the same-origin route", async () => {

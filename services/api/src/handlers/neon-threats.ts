@@ -8,7 +8,7 @@ interface RawThreat {
   id: string; type: string; severity: string; title: string; description: string;
   lat: number; lng: number; event_at: string; intensity: number; metadata: any;
   created_at: string; updated_at: string; source?: string;
-  data_source_run_id?: string; forecast_hour?: number; source_artifact?: any;
+  data_source_run_id?: string; forecast_hour?: number; source_artifact?: any; last_seen_at?: string;
 }
 
 interface ThreatCluster {
@@ -171,7 +171,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     const rows = await sql`
       SELECT id, type, severity, title, description, lat, lng, event_at, intensity,
-             metadata, created_at, updated_at, source, data_source_run_id, forecast_hour, source_artifact
+             metadata, created_at, updated_at, source, data_source_run_id, forecast_hour, source_artifact, last_seen_at
       FROM hazard_alerts
       WHERE is_active = TRUE
       ORDER BY COALESCE(event_at, created_at) DESC, id DESC
@@ -185,6 +185,7 @@ export default async function handler(req: Request): Promise<Response> {
         lat: r.lat, lng: r.lng, event_at: r.event_at, intensity: r.intensity || 0, metadata: r.metadata,
         created_at: r.created_at, updated_at: r.updated_at, source: r.source,
         data_source_run_id: r.data_source_run_id, forecast_hour: r.forecast_hour, source_artifact: r.source_artifact,
+        last_seen_at: r.last_seen_at,
       }));
 
     if (!clustered) {
@@ -221,6 +222,7 @@ export default async function handler(req: Request): Promise<Response> {
       confidence: r.metadata?.confidence ?? null,
       detection_details: r.metadata ?? {},
       source_artifact: r.source_artifact, data_source_run_id: r.data_source_run_id, created_at: r.created_at,
+      source: r.source, updated_at: r.updated_at, last_seen_at: r.last_seen_at,
     }));
 
     return new Response(JSON.stringify({
