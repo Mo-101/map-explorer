@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { COUNTRIES } from "../_shared/countries.js";
 import { corsHeaders } from "../_shared/cors.js";
 
 // El Niño triangulation for Africa: the global driver (ONI), the regional
@@ -19,7 +20,8 @@ const SEASONS = ["DJF", "JFM", "FMA", "MAM", "AMJ", "MJJ", "JJA", "JAS", "ASO", 
 const CLIMATE_YEARS = { from: 1991, to: 2020 };
 const OBS_DAYS = 30, FORECAST_DAYS = 7, SEASONAL_DAYS = 90;
 const CACHE_TTL_MS = 24 * 3600000;
-const CACHE_FILE = join(tmpdir(), "afro-storm-enso-context.json");
+const CACHE_FILE = join(tmpdir(), "afro-storm-enso-context-v2.json");
+const locationCache = new Map<string, { at: number; body: any }>();
 
 type Point = [number, number]; // [lat, lon]
 interface Region {
@@ -126,9 +128,10 @@ const asList = (d: any) => (Array.isArray(d) ? d : [d]);
 function regionalDaily(payload: any, key = "precipitation_sum"): number[] {
   const series = asList(payload).map((loc: any) => (loc.daily?.[key] ?? []) as (number | null)[]);
   const len = Math.min(...series.map(s => s.length));
+  if (!series.length || !len) throw new Error("Missing rainfall series");
   return Array.from({ length: len }, (_, i) => {
     const vals = series.map(s => s[i]).filter((v): v is number => typeof v === "number");
-    if (vals.length < series.length) throw new Error("Missing rainfall values");
+    if (!series.length || !len || vals.length < series.length || vals.some(v => !Number.isFinite(v))) throw new Error("Missing rainfall values");
     return vals.reduce((a, b) => a + b, 0) / vals.length;
   });
 }
@@ -242,6 +245,31 @@ async function build(now: Date) {
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   const now = new Date();
+  const code = new URL(req.url).searchParams.get("country");
+  if (code) {
+    const country = COUNTRIES.find(c => c.code === code);
+    if (!country) return json({ error: "Unknown country code" }, 400);
+    const cached = locationCache.get(code);
+    if (cached && now.getTime() - cached.at < CACHE_TTL_MS) return json(cached.body);
+    try {
+      const east = ["KE", "SO", "UG", "RW", "BI", "TZ"].includes(code);
+      const south = ["ZA", "ZW", "ZM", "MW", "MZ", "BW", "NA", "SZ", "LS", "MG"].includes(code);
+      const template = REGIONS[east ? 0 : 1];
+      const local = await regionSignals({ ...template, id: code, name: `${country.location}, ${country.country}`,
+        points: [[country.lat, country.lon]] }, now);
+      const inSeason = template.months.includes(now.getUTCMonth() + 1);
+      const body = { locality: { ...local, ...country, scope: "Single monitoring point; not a country-wide average",
+        climate_baseline: `${CLIMATE_YEARS.from}?${CLIMATE_YEARS.to}, point rainfall totals for the same dates`,
+        in_season: inSeason, agreement: (east || south) && inSeason ? local.agreement : null,
+        season: (east || south) ? template.season : "Local rainfall evidence",
+        expected: (east || south) ? template.expected : null }, generated_at: now.toISOString(), stale: false };
+      locationCache.set(code, { at: now.getTime(), body });
+      return json(body);
+    } catch (e: any) {
+      if (cached) return json({ ...cached.body, stale: true, error: e?.message });
+      return json({ error: e?.message || "Local climate evidence unavailable" }, 502);
+    }
+  }
   if (!memory) {
     try { const disk = JSON.parse(await readFile(CACHE_FILE, "utf8")); memory = disk; } catch { /* no cache yet */ }
   }

@@ -1,3 +1,4 @@
+import { COUNTRIES } from "../../services/api/src/_shared/countries";
 import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import type * as maptilersdk from "@maptiler/sdk";
@@ -21,7 +22,7 @@ function strength(oni: number): string {
   if (a >= 2.0) return "Very strong";
   if (a >= 1.5) return "Strong";
   if (a >= 1.0) return "Moderate";
-  return "Weak";
+  return a >= 0.5 ? "Weak" : "Neutral";
 }
 
 // Where and when El Niño's African teleconnections are expected (WMO / ICPAC / SADC
@@ -91,7 +92,7 @@ function drawElNinoIcon(): { image: ImageData; pixelRatio: number } {
 const signed = (v: number, digits = 2) => `${v >= 0 ? "+" : ""}${v.toFixed(digits)}`;
 const MARK: Record<string, string> = { true: "✓", false: "✗", null: "–" };
 
-function popupContent(enso: EnsoState, region: (typeof IMPACT_REGIONS)[number] | null, context: EnsoContext | null): HTMLElement {
+function popupContent(enso: EnsoState, region: (typeof IMPACT_REGIONS)[number] | null, context: EnsoContext | null, countryCode?: string): HTMLElement {
   const root = document.createElement("div");
   root.style.cssText = "padding:12px 14px;color:#152a36;max-width:380px;max-height:70vh;overflow:auto;font:12px/1.45 system-ui,sans-serif";
   const add = (tag: string, text: string, css: string, parent: HTMLElement = root) => {
@@ -108,41 +109,55 @@ function popupContent(enso: EnsoState, region: (typeof IMPACT_REGIONS)[number] |
     section("Global driver · Pacific");
     const r = o.rank_for_season;
     add("div", `${r.record ? "Highest" : `#${r.rank} highest`} ${o.season} value in the record (${r.of} years since 1950).`, "");
+    if (context.iod) add("div", `Indian Ocean Dipole: ${signed(context.iod.value)} ?C (${context.iod.month}) ? ${context.iod.phase}${context.iod.stale ? " ? stale, excluded from local agreement" : " ? Indian Ocean index"}.`, "margin-top:4px;color:#4b5f6b");
     add("div", `Change over the last 3 months: ${signed(o.change_3_months)} °C · Niño 3.4 sea surface ${o.niño34_sst_c.toFixed(2)} °C.`, "");
   }
 
-  if (region) {
-    section(`What it means · ${region.season}`);
-    add("div", region.effect, "");
-    add("div", `Typically affected: ${region.countries}.`, "color:#2c4350;margin-top:2px");
-
-    const local = context?.regions.find(x => x.id === region.id);
-    if (local?.signals.length) {
-      section("Local evidence · triangulation");
-      if (local.agreement) {
-        add("div", `${local.agreement.consistent} of ${local.agreement.of} counted local signals point ${local.expected}, as El Niño implies.`,
-          `font-weight:600;color:${local.agreement.of && local.agreement.consistent === local.agreement.of ? "#b45309" : "#2c4350"}`);
-      }
-      const table = document.createElement("div");
-      table.style.cssText = "display:grid;grid-template-columns:1fr auto auto;gap:4px 8px;margin-top:4px;align-items:baseline";
-      for (const s of local.signals) {
-        add("span", `${s.name}${s.counted ? "" : " (not counted)"}`, "color:#2c4350", table);
-        const value = s.value_mm != null
-          ? `${s.value_mm} mm vs ${s.normal_mm} (${s.pct_of_normal}%)`
-          : s.value != null ? `${signed(s.value)} °C${s.month ? ` (${s.month})` : ""}` : s.error ?? "";
-        add("span", value, "text-align:right;white-space:nowrap", table);
-        add("span", `${MARK[String(s.consistent)]} ${s.category}`, `white-space:nowrap;font-weight:600;color:${s.consistent ? "#b45309" : "#6b7c86"}`, table);
-        if (s.members_above_upper_tercile_pct != null) {
-          add("span", `${s.members_above_upper_tercile_pct}% of ensemble members in the wettest third, ${s.members_below_lower_tercile_pct}% in the driest`,
-            "grid-column:1/-1;color:#6b7c86;font-size:11px", table);
-        }
-        if (s.note) add("span", s.note, "grid-column:1/-1;color:#6b7c86;font-size:11px", table);
-      }
-      root.append(table);
-      if (local.climate_baseline) add("div", `Normal = median of ${local.climate_baseline}; "above/below normal" = wettest/driest third.`, "margin-top:4px;color:#6b7c86;font-size:11px");
-    } else if (local && !local.in_season) {
-      add("div", "Local evidence is evaluated when this region's season starts.", "margin-top:4px;color:#6b7c86;font-size:11px");
+  if (region || countryCode) {
+    section("Location details");
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", "Country monitoring location");
+    select.style.cssText = "width:100%;padding:8px;border:1px solid #aab9c2;border-radius:6px;background:#f4f7f9;color:#152a36;font:inherit";
+    for (const c of COUNTRIES) {
+      const option = document.createElement("option");
+      option.value = c.code; option.textContent = `${c.country} ? ${c.location}`; select.append(option);
     }
+    select.value = countryCode ?? (region?.id === "southern-africa" ? "ZW" : "KE");
+    root.append(select);
+    const detail = document.createElement("div"); root.append(detail);
+    let controller: AbortController | null = null;
+    const load = async () => {
+      controller?.abort(); controller = new AbortController();
+      const current = controller;
+      const c = COUNTRIES.find(x => x.code === select.value)!;
+      detail.replaceChildren();
+      add("div", `${c.location}, ${c.country} ? ${c.lat.toFixed(2)}?, ${c.lon.toFixed(2)}?`, "margin:8px 0;font-weight:700", detail);
+      add("div", "Single monitoring point. These figures are not country-wide averages.", "color:#536977;font-size:11px", detail);
+      const status = add("div", "Loading location rainfall and 1991?2020 baseline?", "margin-top:8px", detail);
+      try {
+        const base = (import.meta.env.VITE_HAZARDS_API_BASE_URL || "").replace(/\/$/, "");
+        const res = await fetch(`${base}/api/v1/enso-context?country=${c.code}`, { signal: current.signal });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "Location evidence unavailable");
+        if (current.signal.aborted) return;
+        status.remove();
+        const local = body.locality;
+        add("div", `${body.stale ? "Last available reading" : "Updated"}: ${new Date(body.generated_at).toLocaleString()}`, "margin-top:8px;color:#536977;font-size:11px", detail);
+        if (local.agreement?.of) add("div", `${local.agreement.consistent}/${local.agreement.of} rainfall signals point ${local.expected} during ${local.season}. Agreement is not a probability or proof of El Ni?o attribution.`, "margin-top:8px;font-weight:600", detail);
+        for (const signal of local.signals) {
+          add("div", signal.name, "margin-top:10px;font-weight:600", detail);
+          add("div", signal.value_mm != null ? `${signal.value_mm} mm ? normal ${signal.normal_mm} mm ? ${signal.pct_of_normal}% of normal ? ${signal.category}` : signal.error || "Unavailable", "", detail);
+          if (signal.members_above_upper_tercile_pct != null) add("div", `${signal.members_above_upper_tercile_pct}% of ensemble members in the wettest third; ${signal.members_below_lower_tercile_pct}% in the driest third.`, "font-size:11px;color:#536977", detail);
+          if (signal.period) add("div", signal.period, "font-size:11px;color:#536977", detail);
+          if (signal.source) add("div", signal.source, "font-size:11px;color:#536977", detail);
+          if (signal.note) add("div", signal.note, "font-size:11px;color:#536977", detail);
+        }
+        add("div", `Baseline: ${local.climate_baseline}.`, "margin-top:10px;font-size:11px;color:#536977", detail);
+      } catch (e) {
+        if (!current.signal.aborted) status.textContent = e instanceof Error ? e.message : "Location evidence unavailable";
+      }
+    };
+    select.addEventListener("change", load); load();
   }
 
   if (context?.oni.analogs.length) {
@@ -152,7 +167,7 @@ function popupContent(enso: EnsoState, region: (typeof IMPACT_REGIONS)[number] |
     }
   }
 
-  if (region) {
+  if (region || countryCode) {
     add("p", "El Niño is seasonal climate context, not a local observation. Local alert levels come from rainfall data.",
       "margin:10px 0 0;color:#6b7c86;font-size:11px");
   } else {
@@ -187,7 +202,7 @@ export default function ElNinoLayer({ map, enso, context }: { map: maptilersdk.M
       features: active
         ? IMPACT_REGIONS.filter(r => r.months.includes(month)).map(r => {
             const agreement = context?.regions.find(x => x.id === r.id)?.agreement;
-            const label = agreement?.of ? `${oniLabel}\n${agreement.consistent}/${agreement.of} local signals agree` : oniLabel;
+            const label = agreement?.of ? `${oniLabel}\nChoose country details` : oniLabel;
             return {
               type: "Feature", geometry: { type: "Point", coordinates: [r.lon, r.lat] },
               properties: { region: r.id, label },
@@ -220,10 +235,17 @@ export default function ElNinoLayer({ map, enso, context }: { map: maptilersdk.M
       });
 
       let popup: maplibregl.Popup | undefined;
-      const show = (lngLat: maplibregl.LngLatLike, region: (typeof IMPACT_REGIONS)[number] | null) => {
+      const show = (lngLat: maplibregl.LngLatLike, region: (typeof IMPACT_REGIONS)[number] | null, countryCode?: string) => {
         popup?.remove();
-        popup = new maplibregl.Popup({ maxWidth: "400px" }).setLngLat(lngLat).setDOMContent(popupContent(ensoRef.current, region, contextRef.current)).addTo(map as any);
+        popup = new maplibregl.Popup({ maxWidth: "400px" }).setLngLat(lngLat).setDOMContent(popupContent(ensoRef.current, region, contextRef.current, countryCode)).addTo(map as any);
       };
+      const countryClick = (event: Event) => {
+        const code = (event as CustomEvent<string>).detail;
+        const c = COUNTRIES.find(x => x.code === code);
+        if (c) show([c.lon, c.lat], null, code);
+      };
+      window.addEventListener("country-climate-details", countryClick);
+      map.on("remove", () => window.removeEventListener("country-climate-details", countryClick));
       map.on("click", ICON_LAYER, (e: any) => {
         const f = e.features?.[0];
         show(f.geometry.coordinates, IMPACT_REGIONS.find(r => r.id === f.properties.region) ?? null);

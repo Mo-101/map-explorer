@@ -16,6 +16,7 @@ import ingestFirms from "./handlers/ingest-firms.js";
 import ingestReliefweb from "./handlers/ingest-reliefweb.js";
 import ingestJtwc from "./handlers/ingest-jtwc.js";
 import noaaEnso from "./handlers/noaa-enso.js";
+import countryWeather from "./handlers/country-weather.js";
 import ensoContext from "./handlers/enso-context.js";
 
 const app = Fastify({
@@ -68,6 +69,8 @@ mountAt(app, "/api/v1/health", smokeTest);
 mountAt(app, "/api/v1/threats", neonThreats);
 mountAt(app, "/api/v1/enso", noaaEnso);
 mountAt(app, "/api/v1/enso-context", ensoContext);
+mountAt(app, "/api/v1/country-weather", countryWeather);
+mountAt(app, "/api/v1/brief", aiSituationalSummary, ["POST", "OPTIONS"]);
 
 const port = Number(process.env.PORT ?? 8080);
 // HOST=127.0.0.1 behind a reverse proxy, so the API is not reachable directly.

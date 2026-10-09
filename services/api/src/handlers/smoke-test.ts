@@ -41,8 +41,20 @@ export default async function handler(req: Request): Promise<Response> {
     const totalResult = await sql`SELECT COUNT(*) as count FROM hazard_alerts` as any;
     const totalRows = Number(totalResult[0]?.count || 0);
 
+    let graphcast: any = { status: "unknown", active_alerts: 0, latest_run: null };
+    try {
+      const [latest, active] = await Promise.all([
+        sql`SELECT run_id, status, created_at, completed_at FROM forecast_runs WHERE source ILIKE '%graphcast%' OR model_name ILIKE '%graphcast%' ORDER BY created_at DESC LIMIT 1`,
+        sql`SELECT COUNT(*)::int AS count FROM hazard_alerts WHERE is_active AND (source ILIKE '%graphcast%' OR metadata->>'model' ILIKE '%graphcast%')`,
+      ]);
+      const run = latest[0];
+      const age = run ? Date.now() - new Date(String(run.created_at)).getTime() : Infinity;
+      graphcast = { status: !run ? "no recorded runs" : age > 86400000 ? "stale" : run.status,
+        active_alerts: Number(active[0]?.count || 0), latest_run: run || null };
+    } catch { /* monitoring tables may be unavailable; report unknown */ }
     return new Response(JSON.stringify({
       database: "connected",
+      models: { graphcast: { ...graphcast, implementation: "Repository rollout is a placeholder; no inference implemented" }, ai_brief: { configured: Boolean(process.env.LOVABLE_API_KEY), model: "google/gemini-3-flash-preview", role: "Text summary only; does not generate weather forecasts" } },
       server_time: serverTime,
       active_threats: activeThreats,
       recently_deactivated: recentlyDeactivated,

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type * as maptilersdk from '@maptiler/sdk';
-import { fetchRealtimeThreats } from '@/services/hazardsApi';
-import { apiFetch } from '@/services/apiBase';
+import { useCountryWeather } from '@/hooks/useCountryWeather';
+import { fetchRealtimeThreats, fetchSmokeTest } from '@/services/hazardsApi';
 import { useToast } from '@/hooks/use-toast';
 import { Bell, BellOff } from 'lucide-react';
 import { LEVEL_RANK, type AlertLevel, type EarlyAlert, type EnsoState } from '@/lib/warnings/engine';
@@ -14,6 +14,7 @@ interface TickerItem {
   lat?: number;
   lng?: number;
   threatData?: any;
+  countryCode?: string;
 }
 
 // Expanded African city lookup matching the 35 monitoring points
@@ -163,23 +164,25 @@ const severityDot: Record<string, string> = {
 };
 
 // AI summary cache
-let cachedSummary: { text: string; ts: number } | null = null;
+let cachedSummary: { text: string; degraded: boolean; reason?: string; ts: number } | null = null;
 const AI_CACHE_MS = 5 * 60 * 1000;
 
 
 
-async function fetchAISummary(threats: any[]): Promise<string | null> {
-  if (cachedSummary && Date.now() - cachedSummary.ts < AI_CACHE_MS) return cachedSummary.text;
+async function fetchAISummary(threats: any[]): Promise<{ text: string; degraded: boolean; reason?: string; ts: number } | null> {
+  if (cachedSummary && Date.now() - cachedSummary.ts < AI_CACHE_MS) return cachedSummary;
   try {
-    const resp = await apiFetch("ai-situational-summary", {
+    const base = (import.meta.env.VITE_HAZARDS_API_BASE_URL || "").replace(/\/$/, "");
+    const resp = await fetch(`${base}/api/v1/brief`, {
+      headers: { "Content-Type": "application/json" },
       method: 'POST',
       body: JSON.stringify({ threats }),
     });
     if (!resp.ok) return null;
     const data = await resp.json();
     if (data.summary) {
-      cachedSummary = { text: data.summary, ts: Date.now() };
-      return data.summary;
+      cachedSummary = { text: data.summary, degraded: Boolean(data.degraded), reason: data.reason, ts: Date.now() };
+      return cachedSummary;
     }
     return null;
   } catch {
@@ -230,16 +233,7 @@ function buildWarningItems(w: WarningsFeed, ctx: EnsoContext | null): TickerItem
       text: `${o.phase} · ${o.strength_class} · ONI ${sign(o.value)} °C (${o.season} ${o.year})${o.rank_for_season.record ? ` · highest ${o.season} on record since 1950` : ''} · ${sign(o.change_3_months)} in 3 months${o.analogs.length ? ` · closest analogues ${o.analogs.slice(0, 2).map(a => `${a.year} (peaked ${sign(a.peak)})`).join(', ')}` : ''}`,
       severity: o.phase === 'El Niño' ? 'warning' : 'info',
     });
-    for (const r of ctx.regions) {
-      if (!r.in_season || !r.agreement) continue;
-      const detail = r.signals.filter(s => s.counted && s.pct_of_normal != null).map(s => `${s.name.toLowerCase()} ${s.pct_of_normal}% of normal`).join('; ');
-      items.push({
-        module: 'EL NIÑO · LOCAL',
-        text: `${r.name}, ${r.season}: ${r.agreement.consistent} of ${r.agreement.of} local signals point ${r.expected}${detail ? ` (${detail})` : ''}`,
-        severity: r.agreement.of && r.agreement.consistent === r.agreement.of ? 'warning' : 'info',
-        lat: r.id === 'east-africa' ? 1 : -19, lng: r.id === 'east-africa' ? 38.5 : 28,
-      });
-    }
+
   } else if (w.enso.phase !== 'Unknown') {
     const text = w.enso.phase === 'El Niño'
       ? `El Niño active · ONI ${w.enso.oni?.toFixed(1)} (${w.enso.season}) · enhanced East Africa short rains more likely; alert levels still come from local rainfall`
@@ -276,6 +270,7 @@ function signalKey(t: any, i: number): string {
 }
 
 const SituationalTicker = ({ mapInstance, onThreatSelect, warnings, ensoContext }: SituationalTickerProps) => {
+  const { feed: countryWeather, error: countryWeatherError } = useCountryWeather();
   const [items, setItems] = useState<TickerItem[]>([]);
   const toastedWarnings = useRef<Set<string> | null>(null);
   const toastedEnso = useRef(false);
@@ -288,13 +283,20 @@ const SituationalTicker = ({ mapInstance, onThreatSelect, warnings, ensoContext 
       const data = await fetchRealtimeThreats();
       const threats = Array.isArray(data?.threats) ? data.threats : [];
       const newItems = buildTickerItems(threats);
+      try {
+        const health = await fetchSmokeTest() as any;
+        const g = health.models?.graphcast;
+        if (g) newItems.push({ module: 'GRAPHCAST', severity: 'info',
+          text: `${g.status} ? ${g.active_alerts} active model alerts${g.latest_run ? ` ? latest recorded run ${g.latest_run.status}, ${new Date(g.latest_run.created_at).toLocaleString()}` : ''} ? ${g.implementation || "Forecast output not verified"}` });
+      } catch { newItems.push({ module: 'MODEL STATUS', severity: 'info', text: 'Model monitoring unavailable; current GraphCast output not verified' }); }
+
 
       if (threats.length > 0) {
         fetchAISummary(threats).then(summary => {
           if (summary) {
             setItems(prev => {
-              const filtered = prev.filter(i => i.module !== 'AI BRIEF');
-              return [{ module: 'AI BRIEF', text: summary, severity: 'info' as const }, ...filtered];
+              const filtered = prev.filter(i => i.module !== 'AI BRIEF' && i.module !== 'FEED SUMMARY');
+              return [{ module: summary.degraded ? 'FEED SUMMARY' : 'AI BRIEF', text: `${summary.text}${summary.degraded ? ` ? ${summary.reason || 'AI unavailable'}; rule-based summary` : ' ? Gemini text summary; not a forecast'}`, severity: 'info' as const }, ...filtered];
             });
           }
         });
@@ -361,6 +363,7 @@ const SituationalTicker = ({ mapInstance, onThreatSelect, warnings, ensoContext 
     if (item.lat != null && item.lng != null && mapInstance) {
       mapInstance.flyTo({ center: [item.lng, item.lat], zoom: 6, duration: 1500 });
     }
+    if (item.countryCode) window.dispatchEvent(new CustomEvent("country-climate-details", { detail: item.countryCode }));
     if (item.threatData && onThreatSelect) {
       const t = item.threatData;
       onThreatSelect({
@@ -413,7 +416,12 @@ const SituationalTicker = ({ mapInstance, onThreatSelect, warnings, ensoContext 
     });
   }, [warnings?.enso, toast]);
 
-  const allItems = [...(warnings ? buildWarningItems(warnings, ensoContext ?? null) : []), ...items];
+  const countryItems: TickerItem[] = countryWeather ? [
+    { module: 'AFRICA COVERAGE', severity: 'info', text: `${countryWeather.countries.filter(c => c.available).length}/54 country monitoring locations ? ${countryWeather.source} ? ${countryWeather.stale || countryWeatherError ? 'last available data' : 'updated'} ${new Date(countryWeather.generated_at).toLocaleString()} ? point forecasts, not national averages` },
+    ...countryWeather.countries.map(c => ({ module: c.country.toUpperCase(), severity: 'info' as const, countryCode: c.code, lat: c.lat, lng: c.lon,
+      text: c.available ? `${c.location}: ${c.rainfall_7d_mm} mm forecast ${c.from}?${c.to}; peak ${c.peak_24h_mm} mm/24h on ${c.peak_date} ? click for local climate details` : `${c.location}: forecast unavailable; not evaluated` })),
+  ] : [{ module: 'COUNTRY WEATHER', severity: 'info', text: countryWeatherError || 'Loading country monitoring locations?' }];
+  const allItems = [...(warnings ? buildWarningItems(warnings, ensoContext ?? null) : []), ...items, ...countryItems];
   if (allItems.length === 0) return null;
 
   const displayItems = [...allItems, ...allItems];
@@ -462,6 +470,9 @@ const SituationalTicker = ({ mapInstance, onThreatSelect, warnings, ensoContext 
           <div
             ref={tickerRef}
             className="flex items-center gap-8 whitespace-nowrap animate-ticker"
+            style={{ animationDuration: `${Math.max(60, allItems.reduce((n, item) => n + item.text.length + item.module.length, 0) / 12)}s` }}
+            onMouseEnter={e => { e.currentTarget.style.animationPlayState = "paused"; }}
+            onMouseLeave={e => { e.currentTarget.style.animationPlayState = "running"; }}
           >
             {displayItems.map((item, i) => {
               const clickable = (item.lat != null && item.lng != null) || item.threatData;
@@ -469,6 +480,9 @@ const SituationalTicker = ({ mapInstance, onThreatSelect, warnings, ensoContext 
                 <span
                   key={i}
                   className={`inline-flex items-center gap-2 text-xs ${clickable ? 'cursor-pointer hover:text-foreground rounded px-1.5 py-0.5 transition-colors' : ''}`}
+                  role={clickable ? "button" : undefined}
+                  tabIndex={clickable ? 0 : undefined}
+                  onKeyDown={e => { if (clickable && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); handleItemClick(item); } }}
                   onClick={clickable ? () => handleItemClick(item) : undefined}
                 >
                   <span className={`h-1.5 w-1.5 rounded-full ${severityDot[item.severity]}`} />

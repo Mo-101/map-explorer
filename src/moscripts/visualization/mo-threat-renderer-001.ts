@@ -477,7 +477,7 @@ function addThreatPopup(map: MapLibreMap, threat: ThreatData): void {
     
     // Determine detection source
     const detectionSource = threat.detection_details?.detection_source || threat.detection_details?.source || 'MoScripts Intelligence';
-    const detectionModel = threat.detection_details?.model || 'GraphCast ML';
+    const detectionModel = threat.detection_details?.model || 'Not supplied by source';
     const runId = threat.detection_details?.data_source_run_id || 'N/A';
     const forecastHour = threat.detection_details?.forecast_hour;
     const threshold = threat.detection_details?.threshold;

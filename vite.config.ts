@@ -5,13 +5,17 @@ import { componentTagger } from "lovable-tagger";
 import { handleRequest as health } from "./api/v1/health";
 import { handleRequest as threats } from "./api/v1/threats";
 import { handleRequest as enso } from "./api/v1/enso";
+import { handleRequest as brief } from "./api/v1/brief";
+import { handleRequest as countryWeather } from "./api/v1/country-weather";
 import { handleRequest as ensoContext } from "./api/v1/enso-context";
 
 const localRoutes: Record<string, (req: Request) => Promise<Response>> = {
+  "/api/v1/brief": brief,
   "/api/v1/health": health,
   "/api/v1/threats": threats,
   "/api/v1/enso": enso,
   "/api/v1/enso-context": ensoContext,
+  "/api/v1/country-weather": countryWeather,
 };
 
 // Run the same read-only handlers as Vercel, keeping database credentials in Node.
@@ -20,12 +24,22 @@ function localHazardsApi(): Plugin {
     const url = new URL(req.url || "/", "http://localhost");
     const handler = localRoutes[url.pathname];
     if (!handler) return next();
-    if (req.method !== "GET") {
-      res.writeHead(405, { Allow: "GET" });
+    const method = url.pathname === "/api/v1/brief" ? "POST" : "GET";
+    if (req.method !== method) {
+      res.writeHead(405, { Allow: method });
       res.end();
       return;
     }
-    void handler(new Request(url)).then(async response => {
+    const run = async () => {
+      let body: string | undefined;
+      if (method === "POST") {
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(Buffer.from(chunk));
+        body = Buffer.concat(chunks).toString("utf8");
+      }
+      return handler(new Request(url, { method, body, headers: { "Content-Type": "application/json" } }));
+    };
+    void run().then(async response => {
       res.writeHead(response.status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(await response.text());
     }).catch(() => {
@@ -43,7 +57,7 @@ function localHazardsApi(): Plugin {
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  for (const key of ["NEON_DATABASE_URL", "DATABASE_URL", "PGDATABASE_URL"]) {
+  for (const key of ["NEON_DATABASE_URL", "DATABASE_URL", "PGDATABASE_URL", "LOVABLE_API_KEY"]) {
     if (!process.env[key] && env[key]) process.env[key] = env[key];
   }
   return ({

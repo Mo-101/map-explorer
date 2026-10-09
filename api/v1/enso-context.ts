@@ -8,7 +8,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader("Allow", "GET");
     return res.status(405).json({ error: "Method not allowed" });
   }
-  const response = await handleRequest(new Request(new URL("/api/v1/enso-context", "http://localhost")));
+  const url = new URL("/api/v1/enso-context", "http://localhost");
+  if (typeof req.query.country === "string") url.searchParams.set("country", req.query.country);
+  const response = await handleRequest(new Request(url));
   res.setHeader("Cache-Control", "public, max-age=1800");
   return res.status(response.status).json(await response.json());
 }
