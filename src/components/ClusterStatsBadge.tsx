@@ -20,12 +20,12 @@ const ClusterStatsBadge = ({ clusterCount, rawThreatCount }: Props) => {
           <div className="flex items-center gap-2 px-3 py-2">
             <div className="flex flex-col items-center min-w-[48px]">
               <span className="text-xl font-black text-foreground">{clusterCount}</span>
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Locations</span>
+              <span className="text-[11px] text-muted-foreground uppercase tracking-wider">Locations</span>
             </div>
             <div className="w-px h-8 bg-border/60" />
             <div className="flex flex-col items-center min-w-[48px]">
               <span className="text-xl font-black text-foreground">{rawThreatCount}</span>
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Threats</span>
+              <span className="text-[11px] text-muted-foreground uppercase tracking-wider">Threats</span>
             </div>
 
           </div>

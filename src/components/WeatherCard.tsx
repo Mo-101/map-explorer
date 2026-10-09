@@ -147,13 +147,13 @@ export default function WeatherCard({
             {/* Overlay controls remain available without current-weather data. */}
             {(onToggleTerrain || onToggleIMERG || onToggleCopernicusFlood) && (
               <div className="border-t border-white/15 pt-2 mt-2 space-y-1.5">
-                <div className="text-[10px] uppercase tracking-wider opacity-70">Map Filters</div>
+                <div className="text-[11px] uppercase tracking-wider opacity-70">Map Filters</div>
                 <div className="flex flex-wrap gap-1.5">
                   {onToggleTerrain && (
                     <button
                       onClick={onToggleTerrain}
                       aria-pressed={!!terrainEnabled}
-                      className={`px-2 py-1 rounded-md text-[10px] font-medium flex items-center gap-1 transition-all ${
+                      className={`px-2 py-1 rounded-md text-[11px] font-medium flex items-center gap-1 transition-all ${
                         terrainEnabled ? "bg-white/25 text-white" : "bg-white/10 text-white/80 hover:bg-white/20"
                       }`}
                     >
@@ -164,7 +164,7 @@ export default function WeatherCard({
                     <button
                       onClick={onToggleIMERG}
                       aria-pressed={!!imergEnabled}
-                      className={`px-2 py-1 rounded-md text-[10px] font-medium flex items-center gap-1 transition-all ${
+                      className={`px-2 py-1 rounded-md text-[11px] font-medium flex items-center gap-1 transition-all ${
                         imergEnabled ? "bg-white/25 text-white" : "bg-white/10 text-white/80 hover:bg-white/20"
                       }`}
                     >
@@ -175,7 +175,7 @@ export default function WeatherCard({
                     <button
                       onClick={onToggleCopernicusFlood}
                       aria-pressed={!!copernicusFloodEnabled}
-                      className={`px-2 py-1 rounded-md text-[10px] font-medium flex items-center gap-1 transition-all ${
+                      className={`px-2 py-1 rounded-md text-[11px] font-medium flex items-center gap-1 transition-all ${
                         copernicusFloodEnabled ? "bg-white/25 text-white" : "bg-white/10 text-white/80 hover:bg-white/20"
                       }`}
                     >
@@ -189,7 +189,7 @@ export default function WeatherCard({
                       <button
                         key={m}
                         onClick={() => onChangeIMERGMode(m)}
-                        className={`flex-1 px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
+                        className={`flex-1 px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
                           imergMode === m ? "bg-white/30 text-white" : "bg-white/10 text-white/70 hover:bg-white/20"
                         }`}
                       >

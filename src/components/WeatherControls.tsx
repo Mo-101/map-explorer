@@ -71,7 +71,7 @@ const WeatherControls = ({
                     onClick={() => onChangeLayer(opt.id)}
                     aria-pressed={active}
                     aria-label={opt.label}
-                    className={`w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium rounded-md transition-all duration-200 shrink-0 ${
+                    className={`w-full flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-all duration-200 shrink-0 ${
                       active
                         ? "neu-btn-active text-primary"
                         : "neu-btn text-foreground/80 hover:text-foreground"
@@ -89,14 +89,14 @@ const WeatherControls = ({
               </span>
             )}
           </div>
-          <div role="status" aria-live="polite" className="px-3 pb-2 text-[10px] text-muted-foreground">
+          <div role="status" aria-live="polite" className="px-3 pb-2 text-[11px] text-muted-foreground">
             {error || (loading ? "Loading selected layer…" : `${LAYER_OPTIONS.find(option => option.id === activeLayer)?.label} · ${activeLayer === "radar" ? "Coverage varies by region" : "Move across the map to inspect values"}`)}
           </div>
         </div>
       </div>
 
       {/* Compact forecast playback, aligned with the collapsed map controls. */}
-      <div className="absolute bottom-24 sm:bottom-14 left-1/2 -translate-x-1/2 z-20 w-56 max-w-[calc(100vw-24px)]">
+      <div className="absolute bottom-24 sm:bottom-14 left-1/2 -translate-x-1/2 z-20 w-64 max-w-[calc(100vw-24px)]">
         <MoScriptsTooltip title="Weather Timeline" description={`${timeText || "Waiting for forecast times"}. Drag to seek; play advances the weather forecast.`} position="top">
           <div className="neu-panel overflow-hidden">
             <div className="flex h-9 items-center gap-2 px-2.5">
@@ -131,7 +131,7 @@ const WeatherControls = ({
                   className="forecast-seek absolute inset-0 h-6 w-full cursor-pointer appearance-none bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default"
                 />
               </div>
-              <time className="shrink-0 text-[9px] font-medium tabular-nums text-foreground/80" title={timeText}>
+              <time className="shrink-0 text-[11px] font-medium tabular-nums text-foreground/80" title={timeText}>
                 {shortTime}
               </time>
             </div>

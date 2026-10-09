@@ -11,6 +11,7 @@ const AREA_SOURCE = "enso-nino34";
 const ICON_LAYER = "enso-elnino-icons";
 const AREA_FILL = "enso-nino34-fill";
 const AREA_LINE = "enso-nino34-line";
+const AREA_LABEL = "enso-nino34-label";
 const ICON = "enso-elnino-icon";
 const ICON_PX = 52;
 const ONI_DATA_URL = "https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt";
@@ -210,7 +211,7 @@ export default function ElNinoLayer({ map, enso, context }: { map: maptilersdk.M
           })
         : [],
     };
-    const area: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: active ? [NINO34] : [] };
+    const area: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: active ? [NINO34, { type: "Feature", geometry: { type: "Point", coordinates: [-120, 0] }, properties: { kind: "index-label" } }] : [] };
 
     return whenStyleReady(map, () => {
       if (!map.hasImage(ICON)) { const { image, pixelRatio } = drawElNinoIcon(); map.addImage(ICON, image, { pixelRatio }); }
@@ -221,8 +222,11 @@ export default function ElNinoLayer({ map, enso, context }: { map: maptilersdk.M
         return;
       }
       map.addSource(AREA_SOURCE, { type: "geojson", data: area });
-      map.addLayer({ id: AREA_FILL, type: "fill", source: AREA_SOURCE, paint: { "fill-color": "#f97316", "fill-opacity": 0.18 } });
-      map.addLayer({ id: AREA_LINE, type: "line", source: AREA_SOURCE, paint: { "line-color": "#f97316", "line-width": 2, "line-dasharray": [3, 2] } });
+      map.addLayer({ id: AREA_FILL, type: "fill", source: AREA_SOURCE, paint: { "fill-color": "#fbbf24", "fill-opacity": 0.08 } });
+      map.addLayer({ id: AREA_LINE, type: "line", source: AREA_SOURCE, paint: { "line-color": "#fbbf24", "line-width": 1.2 } });
+      map.addLayer({ id: AREA_LABEL, type: "symbol", source: AREA_SOURCE, filter: ["==", ["get", "kind"], "index-label"],
+        layout: { "text-field": "Ni?o 3.4 ? Pacific ENSO index", "text-font": ["Rubik Bold", "Noto Sans Bold"], "text-size": 13, "text-anchor": "left", "text-offset": [0.7, 0], "text-allow-overlap": false },
+        paint: { "text-color": "#fef3c7", "text-halo-color": "#172532", "text-halo-width": 2 } });
       map.addSource(SOURCE, { type: "geojson", data: points });
       map.addLayer({
         id: ICON_LAYER, type: "symbol", source: SOURCE,

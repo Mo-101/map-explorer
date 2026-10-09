@@ -173,7 +173,7 @@ const MapLegend = ({
   const activeThreats = THREAT_TYPES.filter(entry => threatTypes.includes(entry.label.toLowerCase()) || (entry.label === "Outbreak" && threatTypes.includes("cholera")));
 
   return (
-    <div className="absolute bottom-14 right-5 z-20 w-[200px]">
+    <div className="absolute bottom-14 right-5 z-20 w-[240px]">
       <div className="neu-panel overflow-hidden">
         <button
           onClick={() => setExpanded((v) => !v)}
@@ -181,12 +181,12 @@ const MapLegend = ({
         >
           <div className="flex items-center gap-2">
             <Eye size={12} className="text-primary" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            <span className="text-xs font-bold uppercase tracking-wider text-foreground">
               Legend
             </span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="text-[9px] font-mono text-muted-foreground">
+            <span className="text-[11px] font-mono text-muted-foreground">
               {threatCount} threats
             </span>
             {expanded ? (
@@ -198,17 +198,17 @@ const MapLegend = ({
         </button>
 
         {expanded && (
-          <div className="border-t border-border/30 px-3 py-2 space-y-2.5">
+          <div className="border-t border-border/30 px-3 py-2 space-y-3 leading-relaxed">
             {/* Threat types */}
             <div>
-              <div className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1.5">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">
                 Hazard Types
               </div>
               <div className="grid grid-cols-2 gap-x-2 gap-y-1">
                 {activeThreats.map((entry) => (
                   <div key={entry.label} className="flex items-center gap-1.5">
                     <ShapeIcon shape={entry.shape} color={entry.color} />
-                    <span className="text-[9px] text-muted-foreground">{entry.label}</span>
+                    <span className="text-xs text-foreground">{entry.label}</span>
                   </div>
                 ))}
               </div>
@@ -217,14 +217,14 @@ const MapLegend = ({
             {/* Early-warning rings */}
             {warningLevels.length > 0 && (
               <div>
-                <div className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1.5">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">
                   Early Warnings
                 </div>
                 <div className="grid grid-cols-2 gap-x-2 gap-y-1">
                   {WARNING_LEVELS.filter(entry => warningLevels.includes(entry.label.toLowerCase())).map((entry) => (
                     <div key={entry.label} className="flex items-center gap-1.5">
                       <ShapeIcon shape={entry.shape} color={entry.color} />
-                      <span className="text-[9px] text-muted-foreground">{entry.label}</span>
+                      <span className="text-xs text-foreground">{entry.label}</span>
                     </div>
                   ))}
                 </div>
@@ -234,21 +234,21 @@ const MapLegend = ({
             {/* Active overlays */}
             {overlays.length > 0 && (
               <div>
-                <div className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1">
                   Active Overlays
                 </div>
                 <div className="space-y-1">
                   {overlays.map((entry) => (
                     <div key={entry.label} className="flex items-center gap-1.5">
                       <ShapeIcon shape={entry.shape} color={entry.color} />
-                      <span className="text-[9px] text-muted-foreground">{entry.label}</span>
+                      <span className="text-xs text-foreground">{entry.label}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            <p className="text-[9px] text-muted-foreground">Icon size reflects severity. Click any icon for its source, dates and report.</p>
+            <p className="text-[11px] text-muted-foreground">Icon size reflects severity. Click any icon for its source, dates and report.</p>
           </div>
         )}
       </div>

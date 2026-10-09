@@ -79,23 +79,23 @@ const GdacsRiskSummary = () => {
           className="w-full flex items-center justify-between px-3 py-2 hover:bg-white/5 transition-colors"
         >
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            <span className="text-xs font-bold uppercase tracking-wider text-foreground">
               GDACS Risk
             </span>
             <div className="flex gap-1">
               {totalRed > 0 && (
-                <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-red-500/90 text-white">
+                <span className="px-1.5 py-0.5 text-[11px] font-bold rounded bg-red-500/90 text-white">
                   {totalRed} RED
                 </span>
               )}
               {totalOrange > 0 && (
-                <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-orange-500/90 text-white">
+                <span className="px-1.5 py-0.5 text-[11px] font-bold rounded bg-orange-500/90 text-white">
                   {totalOrange} ORG
                 </span>
               )}
             </div>
           </div>
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-[11px] text-muted-foreground">
             {expanded ? "▲" : "▼"} {totalAlerts}
           </span>
         </button>
@@ -116,7 +116,7 @@ const GdacsRiskSummary = () => {
                     {c.types.map(t => (
                       <span
                         key={t}
-                        className="px-1 py-0 text-[9px] rounded bg-muted text-muted-foreground"
+                        className="px-1 py-0 text-[11px] rounded bg-muted text-muted-foreground"
                       >
                         {t}
                       </span>
@@ -125,21 +125,21 @@ const GdacsRiskSummary = () => {
                 </div>
                 <div className="flex items-center gap-1.5 ml-2">
                   {c.red > 0 && (
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${LEVEL_COLORS.red}`}>
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white ${LEVEL_COLORS.red}`}>
                       {c.red}
                     </span>
                   )}
                   {c.orange > 0 && (
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${LEVEL_COLORS.orange}`}>
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white ${LEVEL_COLORS.orange}`}>
                       {c.orange}
                     </span>
                   )}
                   {c.green > 0 && (
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${LEVEL_COLORS.green}`}>
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white ${LEVEL_COLORS.green}`}>
                       {c.green}
                     </span>
                   )}
-                  <span className="text-[10px] text-muted-foreground font-mono ml-1">
+                  <span className="text-[11px] text-muted-foreground font-mono ml-1">
                     {c.avg_score.toFixed(1)}
                   </span>
                 </div>

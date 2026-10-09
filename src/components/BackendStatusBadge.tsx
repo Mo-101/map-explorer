@@ -100,7 +100,7 @@ export default function BackendStatusBadge() {
               {status === "api_unreachable" && api?.latencyMs && (
                 <span className="text-foreground/50">{api.latencyMs}ms</span>
               )}
-              <span className="text-muted-foreground/60">
+              <span className="text-muted-foreground">
                 {data?.checked_at ? new Date(data.checked_at).toLocaleTimeString() : "..."}
               </span>
             </div>
@@ -116,13 +116,13 @@ export default function BackendStatusBadge() {
                 {Object.entries(data.by_source).map(([src, info]) => (
                   <div key={src} className="flex justify-between gap-4">
                     <span className="text-emerald-300/80">{src}</span>
-                    <span className="text-muted-foreground/60">
+                    <span className="text-muted-foreground">
                       {info.active_count} active · {new Date(info.last_updated).toLocaleTimeString()}
                     </span>
                   </div>
                 ))}
                 {data.by_severity && (
-                  <div className="mt-1 pt-1 border-t border-border/20 text-muted-foreground/50">
+                  <div className="mt-1 pt-1 border-t border-border/20 text-muted-foreground">
                     {Object.entries(data.by_severity).map(([sev, count]) => (
                       <span key={sev} className="mr-2">{sev}: {count}</span>
                     ))}
@@ -132,7 +132,7 @@ export default function BackendStatusBadge() {
             )}
 
             {expanded && status === "api_unreachable" && (
-              <div className="mt-2 pt-2 border-t border-border/30 text-muted-foreground/70 space-y-0.5">
+              <div className="mt-2 pt-2 border-t border-border/30 text-muted-foreground space-y-0.5">
                 <div>Live database status is unavailable. Retrying every 60 seconds.</div>
               </div>
             )}

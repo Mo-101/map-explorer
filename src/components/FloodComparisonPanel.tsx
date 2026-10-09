@@ -103,12 +103,12 @@ const FloodComparisonPanel = ({ allThreats, copernicusGeoJson, copernicusVisible
           <div className="flex items-center gap-2">
             <Layers size={14} className="text-primary" />
             <div className="flex flex-col items-start">
-              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Flood Comparison</span>
-              <span className="text-[9px] text-muted-foreground/70">EMSR867 · TC Gezani</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-foreground">Flood Comparison</span>
+              <span className="text-[11px] text-muted-foreground">EMSR867 · TC Gezani</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {stats && <span className="text-[10px] font-mono text-primary">{stats.detectionRate}%</span>}
+            {stats && <span className="text-[11px] font-mono text-primary">{stats.detectionRate}%</span>}
             {expanded ? <ChevronUp size={12} className="text-muted-foreground" /> : <ChevronDown size={12} className="text-muted-foreground" />}
           </div>
         </button>
@@ -116,26 +116,26 @@ const FloodComparisonPanel = ({ allThreats, copernicusGeoJson, copernicusVisible
         {expanded && (
           <div className="border-t border-border/40">
             <div className="px-3 py-2 flex items-center justify-between border-b border-border/20">
-              <button onClick={onToggleCopernicus} className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-all ${copernicusVisible ? "neu-btn-active text-primary" : "neu-inset text-muted-foreground"}`}>
+              <button onClick={onToggleCopernicus} className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-all ${copernicusVisible ? "neu-btn-active text-primary" : "neu-inset text-muted-foreground"}`}>
                 {copernicusVisible ? <Eye size={10} /> : <EyeOff size={10} />}
                 {copernicusVisible ? "ON" : "OFF"}
               </button>
-              <a href={EMSR867_META.reportLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[9px] text-primary hover:underline">
+              <a href={EMSR867_META.reportLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-primary hover:underline">
                 <ExternalLink size={9} /> Story Map
               </a>
             </div>
 
             <div className="px-3 py-2 border-b border-border/20 bg-primary/5">
-              <div className="text-[10px] font-semibold text-foreground">{EMSR867_META.name}</div>
+              <div className="text-[11px] font-semibold text-foreground">{EMSR867_META.name}</div>
               <div className="flex gap-2 mt-1">
-                <span className="text-[9px] text-muted-foreground">🗓 {new Date(EMSR867_META.eventTime).toLocaleDateString()}</span>
-                <span className="text-[9px] text-muted-foreground">🏷 {EMSR867_META.subCategory}</span>
+                <span className="text-[11px] text-muted-foreground">🗓 {new Date(EMSR867_META.eventTime).toLocaleDateString()}</span>
+                <span className="text-[11px] text-muted-foreground">🏷 {EMSR867_META.subCategory}</span>
               </div>
             </div>
 
             <div className="flex border-b border-border/20">
               {tabs.map((tab) => (
-                <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSelectedAoi(null); }} className={`flex-1 px-1 py-1.5 text-[10px] font-medium uppercase tracking-wide transition-all ${activeTab === tab.id ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}>
+                <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSelectedAoi(null); }} className={`flex-1 px-1 py-1.5 text-[11px] font-medium uppercase tracking-wide transition-all ${activeTab === tab.id ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}>
                   {tab.label}
                 </button>
               ))}
@@ -146,7 +146,7 @@ const FloodComparisonPanel = ({ allThreats, copernicusGeoJson, copernicusVisible
                 <div className="px-3 py-2 space-y-2">
                   {stats && (
                     <div>
-                      <div className="flex justify-between text-[10px] mb-1">
+                      <div className="flex justify-between text-[11px] mb-1">
                         <span className="text-muted-foreground">Detection Accuracy</span>
                         <span className="font-bold text-foreground">{stats.detectionRate}%</span>
                       </div>
@@ -169,7 +169,7 @@ const FloodComparisonPanel = ({ allThreats, copernicusGeoJson, copernicusVisible
                     </div>
                   )}
                   <div className="pt-1 border-t border-border/20 space-y-1">
-                    <div className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Legend</div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-foreground mb-1">Legend</div>
                     <LegendItem color="hsl(217, 91%, 60%)" opacity={0.3} label="Copernicus validated flood extent" />
                     <LegendItem color="hsl(0, 84%, 60%)" opacity={0.8} label="Automated flood alert (matched)" />
                     <LegendItem color="hsl(38, 92%, 50%)" opacity={0.8} label="Automated alert (nearby <50km)" />
@@ -184,17 +184,17 @@ const FloodComparisonPanel = ({ allThreats, copernicusGeoJson, copernicusVisible
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <div className="text-[11px] font-medium text-foreground">{aoi.name}</div>
-                          {!aoi.feasible && <span className="text-[8px] px-1 rounded bg-muted text-muted-foreground">N/A</span>}
+                          {!aoi.feasible && <span className="text-[11px] px-1 rounded bg-muted text-muted-foreground">N/A</span>}
                         </div>
                         <div className="flex items-center gap-2 mt-0.5">
                           {aoi.feasible && aoi.damage.residentialAffected > 0 ? (
                             <>
-                              <span className="text-[9px] text-destructive">{fmt(aoi.damage.residentialAffected)} bldgs</span>
-                              {aoi.damage.floodedAreaHa > 0 && <span className="text-[9px] text-accent-foreground">{aoi.damage.floodedAreaHa.toFixed(0)} ha</span>}
-                              {aoi.damage.populationAffected > 0 && <span className="text-[9px] text-primary">{fmt(aoi.damage.populationAffected)} pop</span>}
+                              <span className="text-[11px] text-destructive">{fmt(aoi.damage.residentialAffected)} bldgs</span>
+                              {aoi.damage.floodedAreaHa > 0 && <span className="text-[11px] text-accent-foreground">{aoi.damage.floodedAreaHa.toFixed(0)} ha</span>}
+                              {aoi.damage.populationAffected > 0 && <span className="text-[11px] text-primary">{fmt(aoi.damage.populationAffected)} pop</span>}
                             </>
                           ) : (
-                            <span className="text-[9px] text-muted-foreground italic">{aoi.feasible ? "Minimal damage" : "Infeasible (cloud cover)"}</span>
+                            <span className="text-[11px] text-muted-foreground italic">{aoi.feasible ? "Minimal damage" : "Infeasible (cloud cover)"}</span>
                           )}
                         </div>
                       </div>
@@ -202,12 +202,12 @@ const FloodComparisonPanel = ({ allThreats, copernicusGeoJson, copernicusVisible
                     </button>
                   ))}
                   <div className="px-3 py-2 bg-primary/5">
-                    <div className="text-[10px] font-bold text-foreground uppercase tracking-wide">Total Impact</div>
+                    <div className="text-[11px] font-bold text-foreground uppercase tracking-wide">Total Impact</div>
                     <div className="grid grid-cols-2 gap-1 mt-1">
-                      <span className="text-[9px] text-muted-foreground">🏠 {fmt(totals.totalResidentialAffected)} buildings</span>
-                      <span className="text-[9px] text-muted-foreground">👥 {fmt(totals.totalPopulationAffected)} people</span>
-                      <span className="text-[9px] text-muted-foreground">🌊 {totals.totalFloodedHa.toFixed(0)} ha flooded</span>
-                      <span className="text-[9px] text-muted-foreground">📐 {totals.totalMaxExtentHa.toFixed(0)} ha max</span>
+                      <span className="text-[11px] text-muted-foreground">🏠 {fmt(totals.totalResidentialAffected)} buildings</span>
+                      <span className="text-[11px] text-muted-foreground">👥 {fmt(totals.totalPopulationAffected)} people</span>
+                      <span className="text-[11px] text-muted-foreground">🌊 {totals.totalFloodedHa.toFixed(0)} ha flooded</span>
+                      <span className="text-[11px] text-muted-foreground">📐 {totals.totalMaxExtentHa.toFixed(0)} ha max</span>
                     </div>
                   </div>
                 </div>
@@ -215,11 +215,11 @@ const FloodComparisonPanel = ({ allThreats, copernicusGeoJson, copernicusVisible
 
               {activeTab === "damage" && selectedAoi && (
                 <div className="px-3 py-2 space-y-2">
-                  <button onClick={() => setSelectedAoi(null)} className="text-[10px] text-primary hover:underline">← Back to all AOIs</button>
+                  <button onClick={() => setSelectedAoi(null)} className="text-[11px] text-primary hover:underline">← Back to all AOIs</button>
                   <div className="text-xs font-bold text-foreground">{selectedAoi.name} (AOI {selectedAoi.number})</div>
-                  <div className="text-[9px] text-muted-foreground">📡 {selectedAoi.damage.sensorName} · {new Date(selectedAoi.damage.acquisitionTime).toLocaleDateString()}</div>
+                  <div className="text-[11px] text-muted-foreground">📡 {selectedAoi.damage.sensorName} · {new Date(selectedAoi.damage.acquisitionTime).toLocaleDateString()}</div>
                   {!selectedAoi.feasible ? (
-                    <div className="text-[10px] text-muted-foreground italic py-2">Assessment not feasible due to remote sensing limitations.</div>
+                    <div className="text-[11px] text-muted-foreground italic py-2">Assessment not feasible due to remote sensing limitations.</div>
                   ) : (
                     <>
                       <div className="space-y-1.5">
@@ -248,8 +248,8 @@ const FloodComparisonPanel = ({ allThreats, copernicusGeoJson, copernicusVisible
                       <div className="min-w-0 flex-1">
                         <div className="text-[11px] font-medium text-foreground truncate">{alert.title}</div>
                         <div className="flex items-center gap-1 mt-0.5">
-                          <span className="text-[9px] text-muted-foreground uppercase">{alert.source}</span>
-                          {alert.gdacs_level && <span className={`px-1 py-0 text-[8px] font-bold rounded text-white ${alert.gdacs_level === "red" ? "bg-destructive" : alert.gdacs_level === "orange" ? "bg-orange-500/80" : "bg-emerald-500/80"}`}>{alert.gdacs_level.toUpperCase()}</span>}
+                          <span className="text-[11px] text-muted-foreground uppercase">{alert.source}</span>
+                          {alert.gdacs_level && <span className={`px-1 py-0 text-[11px] font-bold rounded text-white ${alert.gdacs_level === "red" ? "bg-destructive" : alert.gdacs_level === "orange" ? "bg-orange-500/80" : "bg-emerald-500/80"}`}>{alert.gdacs_level.toUpperCase()}</span>}
                         </div>
                       </div>
                       <MapPin size={10} className="text-muted-foreground mt-1 shrink-0" />
@@ -266,7 +266,7 @@ const FloodComparisonPanel = ({ allThreats, copernicusGeoJson, copernicusVisible
                     <button key={i} onClick={() => onFlyTo(aoi.center[0], aoi.center[1], 10)} className="w-full px-3 py-2 flex items-center justify-between hover:bg-white/5 transition-colors text-left">
                       <div className="min-w-0 flex-1">
                         <div className="text-[11px] font-medium text-foreground truncate">{aoi.name}</div>
-                        <span className="text-[9px] text-muted-foreground">{aoi.area_km2.toFixed(1)} km²</span>
+                        <span className="text-[11px] text-muted-foreground">{aoi.area_km2.toFixed(1)} km²</span>
                       </div>
                       <MapPin size={10} className="text-muted-foreground shrink-0" />
                     </button>
@@ -284,7 +284,7 @@ const FloodComparisonPanel = ({ allThreats, copernicusGeoJson, copernicusVisible
 function StatCard({ label, value, color, icon }: { label: string; value: string | number; color?: string; icon?: React.ReactNode }) {
   return (
     <div className="neu-inset px-2 py-1.5 rounded">
-      <div className="flex items-center gap-1 text-[9px] text-muted-foreground uppercase tracking-wide">{icon}{label}</div>
+      <div className="flex items-center gap-1 text-[11px] text-muted-foreground uppercase tracking-wide">{icon}{label}</div>
       <div className={`text-sm font-bold ${color || "text-foreground"}`}>{value}</div>
     </div>
   );
@@ -294,7 +294,7 @@ function LegendItem({ color, opacity, label }: { color: string; opacity: number;
   return (
     <div className="flex items-center gap-2">
       <div className="w-3 h-3 rounded-sm border border-white/20 shrink-0" style={{ backgroundColor: color, opacity }} />
-      <span className="text-[9px] text-muted-foreground">{label}</span>
+      <span className="text-[11px] text-muted-foreground">{label}</span>
     </div>
   );
 }
@@ -303,14 +303,14 @@ function DamageBar({ label, affected, total }: { label: string; affected: number
   const pct = total > 0 ? Math.min((affected / total) * 100, 100) : 0;
   return (
     <div>
-      <div className="flex justify-between text-[10px] mb-0.5">
+      <div className="flex justify-between text-[11px] mb-0.5">
         <span className="text-muted-foreground">{label}</span>
         <span className="font-semibold text-foreground">{fmt(affected)}<span className="text-muted-foreground font-normal"> / {fmt(total)}</span></span>
       </div>
       <div className="w-full h-1.5 rounded-full bg-secondary overflow-hidden">
         <div className="h-full rounded-full bg-destructive/80 transition-all duration-500" style={{ width: `${pct}%` }} />
       </div>
-      <div className="text-right text-[9px] text-muted-foreground">{pct.toFixed(1)}%</div>
+      <div className="text-right text-[11px] text-muted-foreground">{pct.toFixed(1)}%</div>
     </div>
   );
 }
